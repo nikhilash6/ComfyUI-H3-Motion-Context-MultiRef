@@ -136,7 +136,7 @@ def test_39_frame_prefix_and_exact_assembly():
     }
 
     node = module.MiniMaxH3ExistingVideoMaskedContext()
-    out, n = node.prepare(
+    out, trim, insert_frame_out, n = node.prepare(
         latent,
         VideoVAE(),
         AudioVAE(),
@@ -149,6 +149,8 @@ def test_39_frame_prefix_and_exact_assembly():
     )
 
     assert n == 39
+    assert trim == 39  # prefix insert: trim_frames == n
+    assert insert_frame_out == 0
     ov, oa = out["samples"].unbind()
     vm, am = out["noise_mask"].unbind()
 
