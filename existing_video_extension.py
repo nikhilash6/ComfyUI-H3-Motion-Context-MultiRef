@@ -412,6 +412,12 @@ class MiniMaxH3ExistingVideoMaskedContext:
 
     RETURN_TYPES = ("LATENT", "INT", "INT", "INT")
     RETURN_NAMES = ("latent", "trim_frames", "insert_frame", "preserved_frames")
+    OUTPUT_TOOLTIPS = (
+        "Target AV latent with the preserved source segment written in and a denoise mask applied. Connect to the H3 sampler.",
+        "Frames to trim from the start of the generated output. Equals preserved_frames for prefix inserts (insert_frame=0); 0 for interior inserts. Wire to H3 Assemble Existing Video Extension.",
+        "Actual insert position used after snapping to the nearest multiple of 17. Wire to H3 Assemble Interior Insert.",
+        "Number of source frames preserved in the latent. Wire to H3 Assemble Interior Insert.",
+    )
     FUNCTION = "prepare"
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
