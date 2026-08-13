@@ -755,9 +755,6 @@ class MiniMaxH3AssembleInterior:
         # Audio splice: split continuation audio, replace insert interval with source.
         cont_sr = int(continuation_audio["sample_rate"])
         cont_wave = _stereo_first_batch(continuation_audio["waveform"], "continuation_audio")
-        cont_wave = _resample_waveform(
-            cont_wave, int(continuation_audio["sample_rate"]), cont_sr, "continuation_audio"
-        )
 
         src_wave = _stereo_first_batch(source_audio["waveform"], "source_audio")
         src_wave = _resample_waveform(
