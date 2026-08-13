@@ -772,18 +772,13 @@ class MiniMaxH3AssembleInterior:
         after_want = total_want - insert_end_want
         after_wave = _fit_waveform(cont_wave[..., insert_end_want:], after_want, "continuation after-insert")
 
-        # Take the canonical tail of the source audio (matching what the context node used).
-        src_tail_samples = int(round(available / FPS * cont_sr))
-        if int(src_wave.shape[-1]) < src_tail_samples:
-            src_tail_samples = int(src_wave.shape[-1])
-        canonical_src_wave = src_wave[..., -src_tail_samples:]
-        # From that, take the last n frames worth.
+        # Mirror _canonical_audio: fit the resampled source to the full canonical sample
+        # count before taking the tail. This matches what the context node does — short
+        # source audio is padded with silence so the splice agrees with what H3 was
+        # conditioned to preserve.
+        src_canonical_samples = int(round(available / FPS * cont_sr))
+        canonical_src_wave = _fit_waveform(src_wave, src_canonical_samples, "source audio (canonical)")
         needed_from_src = int(round(n / FPS * cont_sr))
-        if int(canonical_src_wave.shape[-1]) < needed_from_src:
-            raise ValueError(
-                "h3_masked_extension: canonical source audio has %d samples, need %d "
-                "for %d preserved frames" % (int(canonical_src_wave.shape[-1]), needed_from_src, n)
-            )
         src_segment = canonical_src_wave[..., -needed_from_src:]
         src_segment = _fit_waveform(src_segment, src_want, "source insert audio")
 

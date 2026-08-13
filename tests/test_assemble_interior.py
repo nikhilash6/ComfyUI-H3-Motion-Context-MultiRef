@@ -175,6 +175,28 @@ def test_non_insert_region_unchanged():
     assert torch.allclose(images[insert_frame + n:], cont_images[insert_frame + n:])
 
 
+def test_short_source_audio_is_padded_not_raised():
+    """Source audio shorter than available frames must be silence-padded, not rejected."""
+    module = _load_module()
+
+    n_orig = 120
+    h, w = 32, 64
+    source_frames = torch.rand((n_orig, h, w, 3))
+    # Deliberately give only 1000 samples — far less than 22 frames at 24fps/32000Hz (~29333 samples).
+    source_audio = {"waveform": torch.rand((1, 2, 1000)), "sample_rate": SR}
+
+    cont_images, cont_audio = _make_continuation(141, h=h, w=w)
+
+    node = module.MiniMaxH3AssembleInterior()
+    # Must not raise; must return correct output shape.
+    images, audio = node.assemble(
+        cont_images, cont_audio, source_frames, source_audio, 24.0,
+        insert_frame=51, preserved_frames=22, fps=FPS, crop="disabled",
+    )
+    assert int(images.shape[0]) == 141
+    assert int(audio["waveform"].shape[-1]) == round(141 / FPS * SR)
+
+
 def test_splice_uses_same_index_map_as_context_node():
     """The canonical index map used by AssembleInterior must match _cfr_index_map from context."""
     module = _load_module()
