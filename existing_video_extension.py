@@ -402,7 +402,7 @@ class MiniMaxH3ExistingVideoMaskedContext:
                     "default": 0, "min": 0,
                     "tooltip": (
                         "Pixel frame where the preserved segment begins in the target "
-                        "latent. Must be a multiple of 17 (latent phase grid). "
+                        "latent. Snaps down to the nearest multiple of 17 (latent phase grid). "
                         "Multiples of 51 also align the audio clock exactly. "
                         "0 is the original prefix behavior."
                     ),
@@ -439,13 +439,12 @@ class MiniMaxH3ExistingVideoMaskedContext:
 
         insert_frame = int(insert_frame)
         if insert_frame % 17 != 0:
-            lo = (insert_frame // 17) * 17
-            hi = lo + 17
-            raise ValueError(
-                "h3_masked_extension: insert_frame %d is not a multiple of 17 "
-                "(latent phase grid). Nearest valid values: %d and %d."
-                % (insert_frame, lo, hi)
+            snapped = (insert_frame // 17) * 17
+            _LOG.warning(
+                "h3_masked_extension: insert_frame %d is not a multiple of 17; "
+                "snapping down to %d", insert_frame, snapped
             )
+            insert_frame = snapped
 
         target_video, target_audio = _streams_from_latent(latent)
         if int(target_video.shape[0]) != 1 or int(target_audio.shape[0]) != 1:

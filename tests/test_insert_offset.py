@@ -150,28 +150,19 @@ def test_insert_frame_zero_identical_prefix_behavior():
     assert preserved == 22
 
 
-def test_insert_frame_non_multiple_raises():
+def test_insert_frame_non_multiple_snaps_down():
+    """Non-multiple-of-17 insert_frame snaps down silently (matches context_length behavior)."""
     module = _load_module()
-    try:
-        _prepare(module, insert_frame=10)
-        assert False, "Expected ValueError for non-multiple-of-17 insert_frame"
-    except ValueError as e:
-        msg = str(e)
-        assert "insert_frame" in msg
-        assert "10" in msg
-        assert "0" in msg and "17" in msg, "Error should name nearest valid values"
+    # insert_frame=10 -> snaps down to 0
+    out, trim, ins, preserved = _prepare(module, insert_frame=10)
+    assert ins == 0, "insert_frame=10 should snap down to 0"
 
 
-def test_insert_frame_non_multiple_nearest_values():
+def test_insert_frame_non_multiple_snaps_down_to_17():
     module = _load_module()
-    # insert_frame=20 -> nearest valid values are 17 and 34
-    try:
-        _prepare(module, insert_frame=20)
-        assert False
-    except ValueError as e:
-        msg = str(e)
-        assert "17" in msg
-        assert "34" in msg
+    # insert_frame=20 -> snaps down to 17
+    out, trim, ins, preserved = _prepare(module, insert_frame=20)
+    assert ins == 17, "insert_frame=20 should snap down to 17"
 
 
 def test_insert_frame_17():
