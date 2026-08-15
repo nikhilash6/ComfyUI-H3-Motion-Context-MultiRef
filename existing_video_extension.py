@@ -272,7 +272,12 @@ def _snap_context_length(requested, available, target_frames):
     # endpoint (73/24*40 = 121.666... ticks). That cannot be represented as
     # one exact protected AV seam and can cause either an encoder-length
     # mismatch or an audio/video phase shift.
-    cap = min(int(requested), int(available), int(target_frames) - 1)
+    #
+    # Context length is allowed to cover the full target (a fully preserved
+    # latent with no generate rows); prepare() logs a warning for that case
+    # since sampling it directly is a no-op unless the noise_mask is replaced
+    # downstream (e.g. by a graduated fade mask).
+    cap = min(int(requested), int(available), int(target_frames))
     run = largest_h3_video_run(cap)
     while run >= 5 and not is_exact_av_boundary(run):
         run = largest_h3_video_run(run - 1)
@@ -614,6 +619,13 @@ class MiniMaxH3ExistingVideoMaskedContext:
         _apply_audio_context_feather(
             audio_mask, audio_steps, audio_feather_ticks, start=a_start
         )
+
+        if not bool((video_mask > 0).any()):
+            _LOG.warning(
+                "h3_masked_extension: fully preserved latent has no generate "
+                "rows; sampling this directly is a no-op; expected to be "
+                "combined with a downstream noise_mask edit"
+            )
 
         out = latent.copy()
         out["samples"] = comfy.nested_tensor.NestedTensor((out_video, out_audio))

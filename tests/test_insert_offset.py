@@ -244,3 +244,30 @@ def test_insert_frame_nonzero_trim_is_zero():
     module = _load_module()
     _, trim, _, _ = _prepare(module, insert_frame=17, context_length=22)
     assert trim == 0
+
+
+def test_full_coverage_insert_zero_produces_all_zero_masks():
+    """context_length == target length at insert_frame=0: no generate rows.
+
+    This is the fully-preserved-latent case (e.g. combined with a downstream
+    noise_mask edit such as a graduated fade); prepare() must succeed and log
+    a warning rather than raise.
+    """
+    module = _load_module()
+    latent = _make_latent(video_steps=42, audio_steps=235)
+    source_frames = torch.rand((150, 32, 64, 3))
+    source_audio = {"waveform": torch.rand((1, 2, 250000)), "sample_rate": 32000}
+    node = module.MiniMaxH3ExistingVideoMaskedContext()
+
+    out, trim, ins, preserved = node.prepare(
+        latent, VideoVAE(), AudioVAE(), source_frames, source_audio,
+        24.0, 141, "disabled", 0,
+    )
+
+    vm, am = out["noise_mask"].unbind()
+
+    assert preserved == 141
+    assert ins == 0
+    assert trim == 141
+    assert vm.max() == 0.0
+    assert am.max() == 0.0
