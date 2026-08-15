@@ -108,6 +108,8 @@ def _install_nodes_mocks():
         ha = types.ModuleType("update2pkg.h3_auto_crop32")
         class _Crop: pass
         ha.MiniMaxH3CropTo32 = _Crop
+        class _Canvas: pass
+        ha.MiniMaxH3StartCanvasSelector = _Canvas
         sys.modules["update2pkg.h3_auto_crop32"] = ha
 
     if "update2pkg.h3_timing" not in sys.modules:
