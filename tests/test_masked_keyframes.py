@@ -1,6 +1,7 @@
 """CPU-only tests for MiniMaxH3CustomKeyframesMasked in nodes.py."""
 
 import importlib.util
+import logging
 import sys
 import types
 from pathlib import Path
@@ -352,3 +353,80 @@ def test_encoded_token_written_to_correct_step():
         "Encoded token must be written to step 5"
     # Other steps should be 0 (original latent zeros)
     assert float(ov[:, :, 0].max()) == 0.0, "Step 0 should be unchanged (zero)"
+
+
+class _ListLogHandler(logging.Handler):
+    """Minimal handler to capture formatted log records without pytest's caplog.
+
+    The test runner (tests/run_update2_tests.py) calls test functions directly
+    with no arguments, so pytest fixtures like caplog are unavailable here.
+    """
+
+    def __init__(self):
+        super().__init__(level=logging.INFO)
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(self.format(record))
+
+
+def test_1based_position_17_is_interior_static_hold():
+    """1-based position 17 -> pixel frame 16 (interior of step 4, frames 13-16);
+    not phase-0, so it must trigger the static-hold log with step_span > 1."""
+    nodes = _load_nodes()
+    latent = _make_av_latent()
+    state = '{"count":1,"positions":[17]}'  # 1-based: pixel frame 16
+
+    log = logging.getLogger("h3_motion_context")
+    handler = _ListLogHandler()
+    log.addHandler(handler)
+    prev_level = log.level
+    log.setLevel(logging.INFO)
+    try:
+        out_latent, = nodes.MiniMaxH3CustomKeyframesMasked().apply(
+            latent, _StillVAE(), state, "1-based", "disabled",
+            keyframe_image_1=_make_image(),
+        )
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(prev_level)
+
+    # Pixel frame 16 falls in step 4 (frames 13-16, span 4) -> static hold.
+    vm, _ = out_latent["noise_mask"].unbind()
+    assert float(vm[0, 0, 4].max()) == 0.0, "step 4 should be masked (static hold)"
+
+    hold_msgs = [m for m in handler.records if "static hold" in m]
+    assert hold_msgs, "expected a static-hold log line for interior position 17"
+    msg = hold_msgs[0]
+    assert "pixel frame 16" in msg
+    # Nearest phase-0 positions in 1-based indexing: 1 and 18.
+    assert "1 and 18" in msg
+
+
+def test_1based_position_18_is_phase0_no_static_hold():
+    """1-based position 18 -> pixel frame 17 (phase-0, step 5); must NOT trigger
+    the static-hold log."""
+    nodes = _load_nodes()
+    latent = _make_av_latent()
+    state = '{"count":1,"positions":[18]}'  # 1-based: pixel frame 17
+
+    log = logging.getLogger("h3_motion_context")
+    handler = _ListLogHandler()
+    log.addHandler(handler)
+    prev_level = log.level
+    log.setLevel(logging.INFO)
+    try:
+        out_latent, = nodes.MiniMaxH3CustomKeyframesMasked().apply(
+            latent, _StillVAE(), state, "1-based", "disabled",
+            keyframe_image_1=_make_image(),
+        )
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(prev_level)
+
+    # Pixel frame 17 is the phase-0 still token -> step 5.
+    vm, _ = out_latent["noise_mask"].unbind()
+    assert float(vm[0, 0, 5].max()) == 0.0, "step 5 should be masked (phase-0)"
+
+    hold_msgs = [m for m in handler.records if "static hold" in m]
+    assert not hold_msgs, "phase-0 position 18 must not trigger a static-hold log"

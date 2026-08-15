@@ -1189,9 +1189,10 @@ class MiniMaxH3CustomKeyframesMasked:
     """Write still-image H3 keyframes as hard-preserved latent tokens via noise mask.
 
     Hard-preserves one latent step per keyframe (up to 4 frames of static hold for
-    interior frames; exactly 1 frame at phase-0 positions 0, 17, 34, ...).
-    Use the soft keyframe node for suggestions; use this node when the frame must
-    appear verbatim. Audio is not masked and will be fully generated.
+    interior frames; exactly 1 frame at phase-0 positions). Phase-0 positions are
+    1, 18, 35, 52, ... in the default 1-based mode; 0, 17, 34, 51, ... in 0-based
+    mode. Use the soft keyframe node for suggestions; use this node when the frame
+    must appear verbatim. Audio is not masked and will be fully generated.
 
     If the decoded output shows still-frame artifacts, encode a 5-frame static run
     (native, 2 steps) and take step 1 (the 4-frame token) as the contingency path.
@@ -1252,8 +1253,9 @@ class MiniMaxH3CustomKeyframesMasked:
     DESCRIPTION = (
         "Hard-preserve still-image keyframes by writing each encoded still directly "
         "into the target AV latent and masking those steps from denoising. "
-        "Pinned positions must be multiples of 17 (phase-0) to pin exactly one "
-        "frame; interior positions pin the full containing latent step (up to 4 "
+        "Pinned positions must be phase-0 to pin exactly one frame: 1, 18, 35, 52, "
+        "... in the default 1-based mode; 0, 17, 34, 51, ... in 0-based mode. "
+        "Interior positions pin the full containing latent step (up to 4 "
         "frames of static hold). Incoming latent must not already have a noise_mask. "
         "Audio is not masked and will be generated freely."
     )
@@ -1343,16 +1345,28 @@ class MiniMaxH3CustomKeyframesMasked:
                 )
 
             if step_span > 1:
+                phase0_lower = (pixel_index // 17) * 17
+                phase0_upper = phase0_lower + 17
+                disp_lower = (
+                    phase0_lower + 1 if indexing == "1-based" else phase0_lower
+                )
+                disp_upper = (
+                    phase0_upper + 1 if indexing == "1-based" else phase0_upper
+                )
                 _LOG.info(
                     "h3_motion_context: keyframe %d requests pixel frame %d "
                     "(inside latent step %d, frames %d-%d); the full %d-frame "
-                    "step will be pinned as a static hold",
+                    "step will be pinned as a static hold. Nearest phase-0 "
+                    "positions (%s indexing): %d and %d",
                     slot,
                     pixel_index,
                     step_k,
                     step_start,
                     step_start + step_span - 1,
                     step_span,
+                    indexing,
+                    disp_lower,
+                    disp_upper,
                 )
 
             image = kwargs.get("keyframe_image_%d" % slot)
