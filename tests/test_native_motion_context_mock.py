@@ -61,6 +61,8 @@ def install_module():
     ext.MiniMaxH3GeneratedAVMaskedContext = type("MiniMaxH3GeneratedAVMaskedContext", (), {})
     ext.MiniMaxH3StartMaskedContext = type("MiniMaxH3StartMaskedContext", (), {})
     ext.MiniMaxH3AssembleExtension = type("MiniMaxH3AssembleExtension", (), {})
+    ext.MiniMaxH3AssembleInterior = type("MiniMaxH3AssembleInterior", (), {})
+    ext._require_h3_mask_support = lambda: True
     sys.modules["nativepkg.existing_video_extension"] = ext
 
     song = types.ModuleType("nativepkg.h3_song_audio_context")
