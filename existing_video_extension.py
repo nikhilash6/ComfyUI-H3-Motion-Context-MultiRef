@@ -622,9 +622,10 @@ class MiniMaxH3ExistingVideoMaskedContext:
 
         if not bool((video_mask > 0).any()):
             _LOG.warning(
-                "h3_masked_extension: fully preserved latent has no generate "
-                "rows; sampling this directly is a no-op; expected to be "
-                "combined with a downstream noise_mask edit"
+                "h3_masked_extension: the target timeline is fully covered by the "
+                "preserved context (no generate rows). Sampling this directly is a "
+                "no-op; set a new latent noise_mask (e.g. a graduated fade) before "
+                "generating."
             )
 
         out = latent.copy()
