@@ -106,15 +106,18 @@ class AudioVAE:
         return torch.ones((1, 32, 2, t), dtype=torch.float32) * 0.5
 
 
-def _prepare(module, insert_frame=0, context_length=22, video_steps=42, audio_steps=235):
+def _prepare(module, insert_frame=0, context_length=39, video_steps=42, audio_steps=235,
+             audio_feather_ticks=0):
     latent = _make_latent(video_steps=video_steps, audio_steps=audio_steps)
     source_frames = torch.rand((120, 32, 64, 3))
     source_audio = {"waveform": torch.rand((1, 2, 160000)), "sample_rate": 32000}
     node = module.MiniMaxH3ExistingVideoMaskedContext()
+    # audio_feather_ticks precedes insert_frame in prepare(); pass both explicitly so
+    # insert_frame does not land in the feather slot. Default 0 = hard audio mask.
     return node.prepare(
         latent, VideoVAE(), AudioVAE(),
         source_frames, source_audio, 24.0,
-        context_length, "disabled", insert_frame,
+        context_length, "disabled", audio_feather_ticks, insert_frame,
     )
 
 
@@ -134,20 +137,20 @@ def test_insert_frame_zero_identical_prefix_behavior():
 
     out, trim, ins, preserved = node.prepare(
         latent, VideoVAE(), AudioVAE(), source_frames, source_audio,
-        24.0, 22, "disabled", 0,
+        24.0, 39, "disabled", 0,
     )
 
     ov, oa = out["samples"].unbind()
     vm, am = out["noise_mask"].unbind()
 
-    # 22-frame context -> 7 video steps / 37 audio steps
-    assert vm[:, :, :7].max() == 0.0
-    assert vm[:, :, 7:].min() == 1.0
-    assert am[..., :37].max() == 0.0
-    assert am[..., 37:].min() == 1.0
-    assert trim == 22
+    # 39-frame context (smallest AV boundary) -> 12 video steps / 65 audio steps
+    assert vm[:, :, :12].max() == 0.0
+    assert vm[:, :, 12:].min() == 1.0
+    assert am[..., :65].max() == 0.0
+    assert am[..., 65:].min() == 1.0
+    assert trim == 39
     assert ins == 0
-    assert preserved == 22
+    assert preserved == 39
 
 
 def test_insert_frame_non_multiple_snaps_down():
@@ -166,70 +169,76 @@ def test_insert_frame_non_multiple_snaps_down_to_17():
 
 
 def test_insert_frame_17():
-    """insert_frame=17: s=5, video=[5:12], a_start=28, audio=[28:65]."""
+    """insert_frame=17: s=5, video=[5:17], a_start=28, audio=[28:93]."""
     module = _load_module()
     out, trim, ins, preserved = _prepare(module, insert_frame=17)
 
     _, _ = out["samples"].unbind()
     vm, am = out["noise_mask"].unbind()
 
-    # s = 17//17 * 5 = 5; video_steps = 7 (22-frame context)
+    # s = 17//17 * 5 = 5; video_steps = 12 (39-frame context)
     assert vm[:, :, :5].min() == 1.0, "before insert should be generate"
-    assert vm[:, :, 5:12].max() == 0.0, "insert region should be preserve"
-    assert vm[:, :, 12:].min() == 1.0, "after insert should be generate"
+    assert vm[:, :, 5:17].max() == 0.0, "insert region should be preserve"
+    assert vm[:, :, 17:].min() == 1.0, "after insert should be generate"
 
-    # a_start = round(17/24*40) = round(28.33) = 28; audio_steps = 37
+    # a_start = round(17/24*40) = round(28.33) = 28; audio_steps = 65
     assert am[..., :28].min() == 1.0, "before insert audio should be generate"
-    assert am[..., 28:65].max() == 0.0, "insert audio region should be preserve"
-    assert am[..., 65:].min() == 1.0, "after insert audio should be generate"
+    assert am[..., 28:93].max() == 0.0, "insert audio region should be preserve"
+    assert am[..., 93:].min() == 1.0, "after insert audio should be generate"
 
     assert trim == 0, "interior insert should return trim_frames=0"
     assert ins == 17
-    assert preserved == 22
+    assert preserved == 39
 
 
 def test_insert_frame_51():
-    """insert_frame=51: s=15, video=[15:22], a_start=85, audio=[85:122]."""
+    """insert_frame=51: s=15, video=[15:27], a_start=85, audio=[85:150]."""
     module = _load_module()
     out, trim, ins, preserved = _prepare(module, insert_frame=51)
 
     vm, am = out["noise_mask"].unbind()
 
-    # s = 51//17 * 5 = 15; video_steps = 7
+    # s = 51//17 * 5 = 15; video_steps = 12 (39-frame context)
     assert vm[:, :, :15].min() == 1.0
-    assert vm[:, :, 15:22].max() == 0.0
-    assert vm[:, :, 22:].min() == 1.0
+    assert vm[:, :, 15:27].max() == 0.0
+    assert vm[:, :, 27:].min() == 1.0
 
-    # a_start = round(51/24*40) = 85 (exact); audio_steps = 37
+    # a_start = round(51/24*40) = 85 (exact); audio_steps = 65
     assert am[..., :85].min() == 1.0
-    assert am[..., 85:122].max() == 0.0
-    assert am[..., 122:].min() == 1.0
+    assert am[..., 85:150].max() == 0.0
+    assert am[..., 150:].min() == 1.0
 
     assert trim == 0
     assert ins == 51
-    assert preserved == 22
+    assert preserved == 39
 
 
 def test_insert_frame_102():
-    """insert_frame=102: s=30, video=[30:37], a_start=170, audio=[170:207]."""
+    """insert_frame=102: s=30, video=[30:42], a_start=170, audio=[170:235].
+
+    Uses a larger target (52 video / 292 audio steps) so a 39-frame preserved
+    segment still leaves generate rows after the interior insert.
+    """
     module = _load_module()
-    out, trim, ins, preserved = _prepare(module, insert_frame=102)
+    out, trim, ins, preserved = _prepare(
+        module, insert_frame=102, video_steps=52, audio_steps=292
+    )
 
     vm, am = out["noise_mask"].unbind()
 
-    # s = 102//17 * 5 = 30; video_steps = 7
+    # s = 102//17 * 5 = 30; video_steps = 12 (39-frame context)
     assert vm[:, :, :30].min() == 1.0
-    assert vm[:, :, 30:37].max() == 0.0
-    assert vm[:, :, 37:].min() == 1.0
+    assert vm[:, :, 30:42].max() == 0.0
+    assert vm[:, :, 42:].min() == 1.0
 
-    # a_start = round(102/24*40) = 170 (exact); audio_steps = 37
+    # a_start = round(102/24*40) = 170 (exact); audio_steps = 65
     assert am[..., :170].min() == 1.0
-    assert am[..., 170:207].max() == 0.0
-    assert am[..., 207:].min() == 1.0
+    assert am[..., 170:235].max() == 0.0
+    assert am[..., 235:].min() == 1.0
 
     assert trim == 0
     assert ins == 102
-    assert preserved == 22
+    assert preserved == 39
 
 
 def test_insert_frame_zero_trim_equals_n():
@@ -242,7 +251,7 @@ def test_insert_frame_zero_trim_equals_n():
 
 def test_insert_frame_nonzero_trim_is_zero():
     module = _load_module()
-    _, trim, _, _ = _prepare(module, insert_frame=17, context_length=22)
+    _, trim, _, _ = _prepare(module, insert_frame=17)
     assert trim == 0
 
 
@@ -256,7 +265,9 @@ def test_full_coverage_insert_zero_produces_all_zero_masks():
     module = _load_module()
     latent = _make_latent(video_steps=42, audio_steps=235)
     source_frames = torch.rand((150, 32, 64, 3))
-    source_audio = {"waveform": torch.rand((1, 2, 250000)), "sample_rate": 32000}
+    # 150 canonical frames at 24 fps -> exactly 200000 samples at 32 kHz; upstream's
+    # exact timebase conformance rejects large source-audio/timeline mismatches.
+    source_audio = {"waveform": torch.rand((1, 2, 200000)), "sample_rate": 32000}
     node = module.MiniMaxH3ExistingVideoMaskedContext()
 
     out, trim, ins, preserved = node.prepare(
