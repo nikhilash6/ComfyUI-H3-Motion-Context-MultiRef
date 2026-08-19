@@ -230,7 +230,7 @@ def test_audio_feather_uses_half_cosine_without_changing_context_length():
     latent = {"samples": NestedTensor((video, audio))}
     source_frames = torch.rand((120, 32, 64, 3))
     source_audio = {"waveform": torch.rand((1, 2, 160000)), "sample_rate": 32000}
-    out, n = module.MiniMaxH3ExistingVideoMaskedContext().prepare(
+    out, _trim, _insert_frame, n = module.MiniMaxH3ExistingVideoMaskedContext().prepare(
         latent, VideoVAE(), AudioVAE(), source_frames, source_audio,
         24.0, 39, "disabled", 8,
     )
