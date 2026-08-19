@@ -169,6 +169,24 @@ def test_clear_then_set_video_only_round_trips_without_error():
     assert am.min() == 1.0  # audio fully regenerates, as intended after a Clear
 
 
+def test_clear_then_set_audio_only_round_trips_without_error():
+    """Symmetric to the video-only case: Clear, then Set with audio only."""
+    module = _load_module()
+    NT = sys.modules["comfy.nested_tensor"].NestedTensor
+    existing = NT((torch.zeros((1, 1, 42, 2, 4)), torch.zeros((1, 1, 2, 235))))
+    latent = _latent(noise_mask=existing)
+
+    cleared = module.MiniMaxH3ClearAVNoiseMask().clear_mask(latent)[0]
+    assert "noise_mask" not in cleared
+
+    (out,) = module.MiniMaxH3SetAVNoiseMask().set_mask(
+        cleared, video_mask=None, audio_mask=_frame_mask(141)
+    )
+    vm, am = out["noise_mask"].unbind()
+    assert am.shape == (1, 1, 2, 235)
+    assert vm.min() == 1.0  # video fully regenerates, as intended after a Clear
+
+
 def test_set_preserves_samples_and_uses_a_copy():
     module = _load_module()
     latent = _latent()
