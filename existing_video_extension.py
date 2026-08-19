@@ -750,6 +750,11 @@ class MiniMaxH3SetAVNoiseMask:
         video, audio = _streams_from_latent(latent)
         ex_video, ex_audio = _existing_mask_streams(latent)
 
+        # For a missing stream: keep the latent's existing one if present,
+        # otherwise default to all-generate (all-ones). H3 treats an all-ones
+        # stream identically to an absent mask -- a stream is only installed as a
+        # denoise condition when its min < 1 (h3_mask_payload_compat) -- so this
+        # is exactly "that stream fully generates", the same state a Clear leaves.
         if video_mask is not None:
             out_video = _mask_to_video_stream(
                 video_mask, video.shape[2], video.shape[3], video.shape[4]
@@ -757,9 +762,10 @@ class MiniMaxH3SetAVNoiseMask:
         elif ex_video is not None:
             out_video = ex_video
         else:
-            raise ValueError(
-                "h3_av_noise_mask: video_mask is None but the latent has no "
-                "existing video mask stream to keep; provide video_mask."
+            out_video = torch.ones(
+                (1, 1, int(video.shape[2]), int(video.shape[3]), int(video.shape[4])),
+                device=video.device,
+                dtype=torch.float32,
             )
 
         if audio_mask is not None:
@@ -769,9 +775,10 @@ class MiniMaxH3SetAVNoiseMask:
         elif ex_audio is not None:
             out_audio = ex_audio
         else:
-            raise ValueError(
-                "h3_av_noise_mask: audio_mask is None but the latent has no "
-                "existing audio mask stream to keep; provide audio_mask."
+            out_audio = torch.ones(
+                (1, 1, 2, int(audio.shape[-1])),
+                device=audio.device,
+                dtype=torch.float32,
             )
 
         out = latent.copy()

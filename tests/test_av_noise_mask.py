@@ -135,16 +135,38 @@ def test_set_both_none_raises_pointing_at_clear_node():
         raise AssertionError("both-None must raise")
 
 
-def test_set_none_without_existing_stream_raises():
+def test_set_none_without_existing_stream_defaults_to_all_generate():
+    """video-only Set on a mask-less latent leaves audio all-generate (all-ones).
+
+    H3 ignores an all-ones stream (min == 1), so this is the same as 'no audio
+    preservation' without erroring -- the Clear -> Set(video only) workflow.
+    """
     module = _load_module()
     latent = _latent()  # no noise_mask present
     node = module.MiniMaxH3SetAVNoiseMask()
-    try:
-        node.set_mask(latent, video_mask=_frame_mask(141), audio_mask=None)
-    except ValueError as exc:
-        assert "existing audio mask" in str(exc)
-    else:
-        raise AssertionError("None audio with no existing stream must raise")
+    (out,) = node.set_mask(latent, video_mask=_frame_mask(141), audio_mask=None)
+    vm, am = out["noise_mask"].unbind()
+    assert am.shape == (1, 1, 2, 235)
+    assert am.min() == 1.0  # all-generate: H3 treats this as absent
+    assert vm.shape == (1, 1, 42, 2, 4)
+
+
+def test_clear_then_set_video_only_round_trips_without_error():
+    """The reported workflow: Clear AV Noise, then Set with video only."""
+    module = _load_module()
+    NT = sys.modules["comfy.nested_tensor"].NestedTensor
+    existing = NT((torch.zeros((1, 1, 42, 2, 4)), torch.zeros((1, 1, 2, 235))))
+    latent = _latent(noise_mask=existing)
+
+    cleared = module.MiniMaxH3ClearAVNoiseMask().clear_mask(latent)[0]
+    assert "noise_mask" not in cleared
+
+    (out,) = module.MiniMaxH3SetAVNoiseMask().set_mask(
+        cleared, video_mask=_frame_mask(141), audio_mask=None
+    )
+    vm, am = out["noise_mask"].unbind()
+    assert vm.shape == (1, 1, 42, 2, 4)
+    assert am.min() == 1.0  # audio fully regenerates, as intended after a Clear
 
 
 def test_set_preserves_samples_and_uses_a_copy():
