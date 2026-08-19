@@ -655,6 +655,158 @@ class MiniMaxH3ExistingVideoMaskedContext:
         return (out, trim, insert_frame, n)
 
 
+def _normalize_frame_mask(mask):
+    """Coerce a ComfyUI MASK to [F, H, W] float32."""
+    m = mask if torch.is_tensor(mask) else torch.as_tensor(mask)
+    m = m.to(dtype=torch.float32)
+    if m.ndim == 2:            # [H, W]
+        m = m.unsqueeze(0)
+    elif m.ndim == 4:          # [F, C, H, W] -> average channels away
+        m = m.mean(dim=1)
+    elif m.ndim != 3:          # want [F, H, W]
+        raise ValueError(
+            "h3_av_noise_mask: MASK must be [H,W], [F,H,W] or [F,C,H,W], got %s"
+            % (tuple(m.shape),)
+        )
+    return m
+
+
+def _mask_to_video_stream(mask, t, h, w):
+    """Frame-space MASK -> [1,1,T,H,W] video noise-mask stream at latent res."""
+    m = _normalize_frame_mask(mask)
+    m = m.reshape(1, 1, m.shape[0], m.shape[1], m.shape[2])
+    m = torch.nn.functional.interpolate(
+        m, size=(int(t), int(h), int(w)), mode="trilinear", align_corners=False
+    )
+    return m.clamp_(0.0, 1.0)
+
+
+def _mask_to_audio_stream(mask, t):
+    """Frame-space MASK -> [1,1,2,T] audio noise-mask stream (spatial reduced).
+
+    Audio latent time is uniform 40 Hz, so a plain linear resample of the
+    spatially-averaged frame mask suffices (no phase handling), broadcast to the
+    two audio channels.
+    """
+    m = _normalize_frame_mask(mask)
+    m = m.mean(dim=(1, 2)).reshape(1, 1, -1)          # [1, 1, F]
+    m = torch.nn.functional.interpolate(
+        m, size=int(t), mode="linear", align_corners=False
+    )                                                  # [1, 1, T]
+    m = m.reshape(1, 1, 1, int(t)).expand(1, 1, 2, int(t)).contiguous()
+    return m.clamp_(0.0, 1.0)
+
+
+def _existing_mask_streams(latent):
+    """Return (video_mask, audio_mask) from a latent's nested noise_mask, else (None, None)."""
+    existing = latent.get("noise_mask")
+    if existing is None:
+        return None, None
+    if hasattr(existing, "unbind"):
+        parts = list(existing.unbind())
+    elif isinstance(existing, (tuple, list)):
+        parts = list(existing)
+    else:
+        return None, None
+    if len(parts) < 2:
+        return None, None
+    return parts[0], parts[1]
+
+
+class MiniMaxH3SetAVNoiseMask:
+    """Set a nested H3 AV noise mask (video + audio) on an AV latent.
+
+    ComfyUI's stock ``Set Latent Noise Mask`` overwrites ``noise_mask`` with a
+    single plain tensor, which H3 unpacks to only the video stream — the audio
+    denoise-mask becomes ``None`` and preserved insert audio is silently
+    regenerated.  This node writes a proper two-stream ``NestedTensor`` so both
+    streams keep their intended per-step protection.  Provide masks in frame
+    space; the node resizes each to the latent's stream resolution.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {"latent": ("LATENT",)},
+            "optional": {
+                "video_mask": ("MASK",),
+                "audio_mask": ("MASK",),
+            },
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    RETURN_NAMES = ("latent",)
+    FUNCTION = "set_mask"
+    CATEGORY = "conditioning/minimax"
+
+    def set_mask(self, latent, video_mask=None, audio_mask=None):
+        if video_mask is None and audio_mask is None:
+            raise ValueError(
+                "h3_av_noise_mask: both video_mask and audio_mask are None. To "
+                "remove the noise mask entirely use MiniMaxH3ClearAVNoiseMask; to "
+                "discard just one stream, zero that mask and set it."
+            )
+
+        video, audio = _streams_from_latent(latent)
+        ex_video, ex_audio = _existing_mask_streams(latent)
+
+        if video_mask is not None:
+            out_video = _mask_to_video_stream(
+                video_mask, video.shape[2], video.shape[3], video.shape[4]
+            ).to(device=video.device)
+        elif ex_video is not None:
+            out_video = ex_video
+        else:
+            raise ValueError(
+                "h3_av_noise_mask: video_mask is None but the latent has no "
+                "existing video mask stream to keep; provide video_mask."
+            )
+
+        if audio_mask is not None:
+            out_audio = _mask_to_audio_stream(audio_mask, audio.shape[-1]).to(
+                device=audio.device
+            )
+        elif ex_audio is not None:
+            out_audio = ex_audio
+        else:
+            raise ValueError(
+                "h3_av_noise_mask: audio_mask is None but the latent has no "
+                "existing audio mask stream to keep; provide audio_mask."
+            )
+
+        out = latent.copy()
+        out["noise_mask"] = comfy.nested_tensor.NestedTensor((out_video, out_audio))
+        _LOG.info(
+            "h3_av_noise_mask: set nested AV noise mask (video %s / audio %s)",
+            tuple(out_video.shape),
+            tuple(out_audio.shape),
+        )
+        return (out,)
+
+
+class MiniMaxH3ClearAVNoiseMask:
+    """Remove any noise mask from an H3 AV latent (nested-aware).
+
+    The essentials 'remove mask' node is an external dependency; this ships the
+    same capability and correctly drops a nested AV noise mask so the sampler
+    treats the whole latent as fully generated.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"latent": ("LATENT",)}}
+
+    RETURN_TYPES = ("LATENT",)
+    RETURN_NAMES = ("latent",)
+    FUNCTION = "clear_mask"
+    CATEGORY = "conditioning/minimax"
+
+    def clear_mask(self, latent):
+        out = latent.copy()
+        out.pop("noise_mask", None)
+        return (out,)
+
+
 class MiniMaxH3AssembleInterior:
     """Frame/sample-exact assembly for an interior existing-video insert.
 

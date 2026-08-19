@@ -52,6 +52,8 @@ from .existing_video_extension import (
     MiniMaxH3StartMaskedContext,
     MiniMaxH3AssembleExtension,
     MiniMaxH3AssembleInterior,
+    MiniMaxH3SetAVNoiseMask,
+    MiniMaxH3ClearAVNoiseMask,
     _require_h3_mask_support,
 )
 from .h3_masked_bridge import MiniMaxH3MaskedAVBridge
@@ -1489,6 +1491,8 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3StreamLiveMusicVideoToVHS": MiniMaxH3StreamLiveMusicVideoToVHS,
     "MiniMaxH3FinalizeVHSOutput": MiniMaxH3FinalizeVHSOutput,
     "MiniMaxH3AssembleInterior": MiniMaxH3AssembleInterior,
+    "MiniMaxH3SetAVNoiseMask": MiniMaxH3SetAVNoiseMask,
+    "MiniMaxH3ClearAVNoiseMask": MiniMaxH3ClearAVNoiseMask,
     "MiniMaxH3CropTo32": MiniMaxH3CropTo32,
     "MiniMaxH3StartCanvasSelector": MiniMaxH3StartCanvasSelector,
     "MiniMaxH3OptionalReferenceImage": MiniMaxH3OptionalReferenceImage,
@@ -1514,6 +1518,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3StreamLiveMusicVideoToVHS": "H3 Stream Final Music Video to VHS",
     "MiniMaxH3FinalizeVHSOutput": "H3 Final Stream Output Sink",
     "MiniMaxH3AssembleInterior": "H3 Assemble Interior Insert",
+    "MiniMaxH3SetAVNoiseMask": "H3 Set AV Noise Mask",
+    "MiniMaxH3ClearAVNoiseMask": "H3 Clear AV Noise Mask",
     "MiniMaxH3CropTo32": "H3 Crop Source To /32",
     "MiniMaxH3StartCanvasSelector": "H3 Start Canvas Selector",
     "MiniMaxH3OptionalReferenceImage": "H3 Optional Reference Image",
