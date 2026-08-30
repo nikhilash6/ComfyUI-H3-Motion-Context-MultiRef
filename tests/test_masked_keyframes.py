@@ -509,3 +509,28 @@ def test_1based_position_18_is_phase0_no_static_hold():
 
     hold_msgs = [m for m in handler.records if "static hold" in m]
     assert not hold_msgs, "phase-0 position 18 must not trigger a static-hold log"
+
+
+def test_connected_position_int_overrides_saved_widget_state():
+    """A linked keyframe_position_N INT takes precedence over keyframe_state."""
+    nodes = _load_nodes()
+    latent = _make_av_latent()
+    state = '{"count":1,"positions":[1]}'
+
+    out_latent, = nodes.MiniMaxH3CustomKeyframesMasked().apply(
+        latent, _StillVAE(), state, "1-based", "disabled",
+        keyframe_image_1=_make_image(),
+        keyframe_position_1=18,
+    )
+
+    vm, _ = out_latent["noise_mask"].unbind()
+    assert float(vm[0, 0, 0].min()) == 1.0, "saved widget position must be overridden"
+    assert float(vm[0, 0, 5].max()) == 0.0, "linked INT position should pin step 5"
+
+
+def test_dynamic_position_input_spec_is_int():
+    nodes = _load_nodes()
+    spec = nodes._DynamicKeyframeInputs()["keyframe_position_7"]
+    assert spec[0] == "INT"
+    assert spec[1]["min"] == 0
+    assert spec[1]["max"] == 99999

@@ -831,20 +831,39 @@ class MiniMaxH3MotionContextLoadLatent:
 
 
 class _DynamicKeyframeInputs(dict):
-    """Dynamic backend input map for keyframe_image_N sockets."""
+    """Dynamic backend input map for keyframe image/position sockets."""
 
-    def __contains__(self, key):
-        return isinstance(key, str) and key.startswith("keyframe_image_")
-
-    def __getitem__(self, key):
+    @staticmethod
+    def _spec(key):
         if isinstance(key, str) and key.startswith("keyframe_image_"):
             return ("IMAGE",)
+        if isinstance(key, str) and key.startswith("keyframe_position_"):
+            return (
+                "INT",
+                {
+                    "min": 0,
+                    "max": 99999,
+                    "step": 1,
+                    "tooltip": (
+                        "Optional connected override for this keyframe's "
+                        "position widget."
+                    ),
+                },
+            )
+        return None
+
+    def __contains__(self, key):
+        return self._spec(key) is not None
+
+    def __getitem__(self, key):
+        spec = self._spec(key)
+        if spec is not None:
+            return spec
         raise KeyError(key)
 
     def get(self, key, default=None):
-        if isinstance(key, str) and key.startswith("keyframe_image_"):
-            return ("IMAGE",)
-        return default
+        spec = self._spec(key)
+        return default if spec is None else spec
 
 class MiniMaxH3CustomKeyframes:
     """Attach still-image H3 keyframes at arbitrary timeline positions."""
@@ -955,7 +974,12 @@ class MiniMaxH3CustomKeyframes:
 
         anchors = []
         for slot in range(1, count + 1):
-            raw_position = int(positions[slot - 1])
+            connected_position = kwargs.get("keyframe_position_%d" % slot)
+            raw_position = int(
+                positions[slot - 1]
+                if connected_position is None
+                else connected_position
+            )
             pixel_index = (
                 raw_position - 1
                 if indexing == "1-based"
@@ -1446,7 +1470,12 @@ class MiniMaxH3CustomKeyframesMasked:
 
         anchors = []
         for slot in range(1, count + 1):
-            raw_position = int(positions[slot - 1])
+            connected_position = kwargs.get("keyframe_position_%d" % slot)
+            raw_position = int(
+                positions[slot - 1]
+                if connected_position is None
+                else connected_position
+            )
             pixel_index = (
                 raw_position - 1
                 if indexing == "1-based"

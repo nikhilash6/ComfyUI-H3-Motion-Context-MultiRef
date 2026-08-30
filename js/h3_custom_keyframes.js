@@ -59,6 +59,10 @@ function positionWidgetName(i) {
     return `keyframe ${i} position`;
 }
 
+function positionInputName(i) {
+    return `keyframe_position_${i}`;
+}
+
 function findInput(node, name) {
     return node.inputs?.findIndex(
         (input) => input.name === name,
@@ -74,8 +78,27 @@ function ensureImageInput(node, i) {
     });
 }
 
+function ensurePositionInput(node, i) {
+    const name = positionInputName(i);
+    if (findInput(node, name) >= 0) return;
+
+    node.addInput(name, "INT", {
+        label: `keyframe ${i} position`,
+    });
+}
+
 function removeImageInput(node, i) {
     const slot = findInput(node, imageInputName(i));
+    if (slot < 0) return;
+
+    if (node.inputs?.[slot]?.link != null) {
+        node.disconnectInput(slot);
+    }
+    node.removeInput(slot);
+}
+
+function removePositionInput(node, i) {
+    const slot = findInput(node, positionInputName(i));
     if (slot < 0) return;
 
     if (node.inputs?.[slot]?.link != null) {
@@ -182,6 +205,7 @@ function ensureButtons(node) {
 
             node._h3CustomKeyframeCount = i;
             ensureImageInput(node, i);
+            ensurePositionInput(node, i);
             ensurePositionWidget(
                 node,
                 i,
@@ -206,6 +230,7 @@ function ensureButtons(node) {
 
             const i = node._h3CustomKeyframeCount;
             removeImageInput(node, i);
+            removePositionInput(node, i);
             removePositionWidget(node, i);
             node._h3CustomKeyframeCount -= 1;
             writeState(node);
@@ -280,11 +305,13 @@ function buildUI(node) {
         i--
     ) {
         removeImageInput(node, i);
+        removePositionInput(node, i);
         removePositionWidget(node, i);
     }
 
     for (let i = 1; i <= state.count; i++) {
         ensureImageInput(node, i);
+        ensurePositionInput(node, i);
         ensurePositionWidget(
             node,
             i,
