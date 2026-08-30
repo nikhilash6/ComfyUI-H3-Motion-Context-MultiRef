@@ -294,3 +294,190 @@ def test_audio_timebase_conform_rejects_large_duration_mismatch():
         assert "too large for AV timebase conformance" in str(exc)
     else:
         raise AssertionError("large audio duration mismatches must not be silently stretched")
+
+
+def test_full_source_audio_regen_mask_protects_all_video_and_frees_all_audio():
+    source_frames = torch.rand((120, 32, 64, 3))
+    length_node = module.MiniMaxH3SourceAudioRegenLength()
+    h3_length, source_count = length_node.resolve(source_frames, 24.0)
+    assert (h3_length, source_count) == (124, 120)
+
+    video = torch.zeros((1, 24, 37, 2, 4))  # 37 H3 video steps cover 124 frames
+    audio = torch.zeros((1, 32, 2, round(124 / 24 * 40)))
+    latent = {"samples": NestedTensor((video, audio))}
+    out, = module.MiniMaxH3SourceAudioRegenMask().prepare(
+        latent, VideoVAE(), source_frames, 24.0, "disabled"
+    )
+    ov, oa = out["samples"].unbind()
+    vm, am = out["noise_mask"].unbind()
+    assert torch.allclose(ov, torch.full_like(ov, 0.25))
+    assert torch.count_nonzero(oa) == 0
+    assert torch.count_nonzero(vm) == 0
+    assert torch.all(am == 1)
+
+
+def test_source_audio_policy_lazily_selects_and_trims_full_h3_regeneration():
+    node = module.MiniMaxH3SourceAudioPolicy()
+    frames = torch.rand((120, 32, 64, 3))
+    video_info = {"source_fps": 24.0, "loaded_fps": 24.0}
+    assert node.check_lazy_status(
+        AudioVAE(), 'regenerate_h3', frames, video_info, 24.0,
+        regenerated_latent=None,
+    ) == ['regenerated_latent']
+
+    video = torch.zeros((1, 24, 37, 2, 4))
+    audio = torch.ones((1, 32, 2, round(124 / 24 * 40))) * 0.6
+    latent = {"samples": NestedTensor((video, audio))}
+    out, = node.select(
+        AudioVAE(), 'regenerate_h3', frames, video_info, 24.0,
+        regenerated_latent=latent,
+    )
+    assert out['sample_rate'] == 32000
+    assert out['waveform'].shape == (1, 2, 160000)
+    assert torch.count_nonzero(out['waveform']) == out['waveform'].numel()
+
+
+def test_source_audio_policy_uses_vhs_filename_but_never_vhs_audio_output():
+    node = module.MiniMaxH3SourceAudioPolicy()
+    frames = torch.rand((120, 32, 64, 3))
+    video_info = {
+        "source_fps": 30.0,
+        "loaded_fps": 24.0,
+        "loaded_frame_count": 120,
+    }
+    prompt = {
+        "1037": {
+            "class_type": "MiniMaxH3SourceAudioPolicy",
+            "inputs": {"video_info": ["99", 3]},
+        },
+        "99": {
+            "class_type": "VHS_LoadVideo",
+            "inputs": {
+                "video": "silent.mp4",
+                "force_rate": 24,
+                "skip_first_frames": 0,
+                "select_every_nth": 1,
+            },
+        },
+    }
+
+    old_modules = {name: sys.modules.get(name) for name in (
+        "folder_paths", "imageio_ffmpeg"
+    )}
+    old_run = module.subprocess.run
+    seen = {}
+    try:
+        folder_paths = types.ModuleType("folder_paths")
+        folder_paths.get_input_directory = lambda: "/tmp/comfy-input"
+        folder_paths.get_annotated_filepath = lambda name, default=None: f"{default}/{name}"
+        sys.modules["folder_paths"] = folder_paths
+
+        imageio_ffmpeg = types.ModuleType("imageio_ffmpeg")
+        imageio_ffmpeg.get_ffmpeg_exe = lambda: "/bin/ffmpeg"
+        sys.modules["imageio_ffmpeg"] = imageio_ffmpeg
+
+        class Proc:
+            returncode = 1
+            stdout = b""
+            stderr = b"Stream map '0:a:0' matches no streams"
+
+        def fake_run(args, **kwargs):
+            seen['args'] = list(args)
+            return Proc()
+        module.subprocess.run = fake_run
+
+        assert node.check_lazy_status(
+            AudioVAE(), "keep_source", frames, video_info, 24.0,
+            regenerated_latent=None,
+        ) == []
+        out, = node.select(
+            AudioVAE(), "keep_source", frames, video_info, 24.0,
+            prompt=prompt, unique_id="1037",
+        )
+        assert out["sample_rate"] == 32000
+        assert out["waveform"].shape == (1, 2, 160000)
+        assert torch.count_nonzero(out["waveform"]) == 0
+        assert "/tmp/comfy-input/silent.mp4" in seen['args']
+        assert ["-map", "0:a:0"] == seen['args'][seen['args'].index('-map'):seen['args'].index('-map')+2]
+    finally:
+        module.subprocess.run = old_run
+        for name, value in old_modules.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
+
+
+def test_source_audio_policy_honors_vhs_skip_as_audio_seek():
+    prompt = {
+        "p": {"class_type": "MiniMaxH3SourceAudioPolicy", "inputs": {"video_info": ["v", 3]}},
+        "v": {"class_type": "VHS_LoadVideo", "inputs": {
+            "video": "clip.mp4", "force_rate": 24, "skip_first_frames": 24,
+            "select_every_nth": 1,
+        }},
+    }
+    info = {"source_fps": 30.0, "loaded_fps": 24.0}
+    source = module._vhs_source_from_prompt(prompt, "p", info)
+    assert source["video"] == "clip.mp4"
+    assert abs(source["start_seconds"] - 1.0) < 1e-9
+
+
+def test_fan_recovered_context_repairs_smear_and_returns_dynamic_native_guide():
+    target = torch.zeros((12, 2, 3, 3), dtype=torch.float32)
+    source = torch.stack([
+        torch.full((2, 3, 3), 1.0),
+        torch.full((2, 3, 3), 2.0),
+        torch.full((2, 3, 3), 3.0),
+    ])
+    hold_map = '{"holds":[2,1,3,1],"world_len":4}'
+    out, guide, start = module.MiniMaxH3FanRecoveredContext().bridge(
+        target, source, hold_map, 3
+    )
+    expanded = torch.cat((
+        source[0:1].repeat(2,1,1,1),
+        source[1:2],
+        source[2:3].repeat(3,1,1,1),
+    ))
+    assert start == 3
+    assert torch.equal(out[:6], expanded)
+    assert torch.count_nonzero(out[6:]) == 0
+    assert torch.equal(guide, expanded[-3:])
+
+
+def test_fan_recovered_context_rejects_wrong_world_len():
+    target = torch.zeros((12, 2, 3, 3), dtype=torch.float32)
+    source = torch.zeros((3, 2, 3, 3), dtype=torch.float32)
+    try:
+        module.MiniMaxH3FanRecoveredContext().bridge(
+            target, source, '{"holds":[1,1,1],"world_len":4}', 3
+        )
+    except ValueError as exc:
+        assert "world_len" in str(exc)
+    else:
+        raise AssertionError("expected hold-map world_len validation to fail")
+
+
+def test_fan_recovered_context_rejects_non_integer_holds():
+    target = torch.zeros((12, 2, 3, 3), dtype=torch.float32)
+    source = torch.zeros((3, 2, 3, 3), dtype=torch.float32)
+    try:
+        module.MiniMaxH3FanRecoveredContext().bridge(
+            target, source, '{"holds":[1,1.5,1],"world_len":3}', 3
+        )
+    except ValueError as exc:
+        assert "must be integers" in str(exc)
+    else:
+        raise AssertionError("non-integer hold factors must not be silently coerced")
+
+
+def test_fan_recovered_context_rejects_prefix_that_consumes_target():
+    target = torch.zeros((6, 2, 3, 3), dtype=torch.float32)
+    source = torch.zeros((3, 2, 3, 3), dtype=torch.float32)
+    try:
+        module.MiniMaxH3FanRecoveredContext().bridge(
+            target, source, '{"holds":[2,2,2],"world_len":3}', 3
+        )
+    except ValueError as exc:
+        assert "consumes the whole smeared target" in str(exc)
+    else:
+        raise AssertionError("a fanned context that leaves no future must fail")

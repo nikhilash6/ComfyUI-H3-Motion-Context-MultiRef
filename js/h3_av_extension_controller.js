@@ -74,6 +74,9 @@ function desiredState(meta, state) {
     const role = String(meta.role ?? "");
     const index = Number(meta.index ?? 0);
     if (role === "source_video") return state.start === "Existing Video";
+    if (role === "source_audio_regen") {
+        return state.start === "Existing Video" && state.sourceAudio === "Regenerate with H3";
+    }
     if (role === "starter_core") return state.start !== "Existing Video";
     if (role === "i2v_keyframe") return state.start === "I2V / Custom Keyframes";
     if (role === "extension") return index >= 1 && index <= state.active;
@@ -93,8 +96,54 @@ function readState(controller) {
     return {
         start: String(widget(controller, "start", 0)?.value ?? "Existing Video"),
         active: Math.max(1, Math.min(6, Math.trunc(Number(widget(controller, "active_extensions", 1)?.value ?? 1)))),
+        feather: Math.max(0, Math.trunc(Number(widget(controller, "audio_feather_ticks", 2)?.value ?? 8))),
         previews: String(widget(controller, "previews", 3)?.value ?? "All Active"),
+        sourceAudio: String(widget(controller, "source_audio", 4)?.value ?? "Keep source audio"),
     };
+}
+
+function parameterNodes(graph) {
+    const found = new Map();
+    for (const node of graph?._nodes ?? []) {
+        const key = String(node?.properties?.h3_av_param ?? "");
+        if (!key) continue;
+        const list = found.get(key) ?? [];
+        list.push(node);
+        found.set(key, list);
+    }
+    return found;
+}
+
+function setMirroredWidget(node, name, value) {
+    const w = widget(node, name, 0);
+    if (!w) return false;
+    if (String(w.value) === String(value)) return true;
+    w.value = value;
+    node.setDirtyCanvas?.(true, true);
+    return true;
+}
+
+function syncExecutionParameters(graph, state, { strict = false } = {}) {
+    const params = parameterNodes(graph);
+    const specs = [
+        ["start", "start", state.start],
+        ["active_extensions", "value", state.active],
+        ["audio_feather_ticks", "value", state.feather],
+        ["source_audio", "source_audio", state.sourceAudio],
+    ];
+    const errors = [];
+    for (const [key, widgetName, value] of specs) {
+        const nodes = params.get(key) ?? [];
+        if (nodes.length !== 1) {
+            errors.push(`expected exactly one cache-isolated AV parameter '${key}', found ${nodes.length}`);
+            continue;
+        }
+        if (!setMirroredWidget(nodes[0], widgetName, value)) {
+            errors.push(`AV parameter '${key}' is missing widget '${widgetName}'`);
+        }
+    }
+    if (strict && errors.length) throw new Error("H3 AV Extension Controller: " + errors.join("; "));
+    return errors;
 }
 
 function validateManagedGroups(graph, managed, controller) {
@@ -104,7 +153,7 @@ function validateManagedGroups(graph, managed, controller) {
         errors.push(`expected exactly one H3 AV Extension Controller, found ${allControllers.length}`);
     }
     const knownRoles = new Set([
-        "source_video", "starter_core", "i2v_keyframe", "extension",
+        "source_video", "source_audio_regen", "starter_core", "i2v_keyframe", "extension",
         "starter_preview", "extension_preview",
     ]);
     for (const entry of managed) {
@@ -125,6 +174,10 @@ function validateManagedGroups(graph, managed, controller) {
     for (const role of executionRoles) {
         const found = managed.filter((x) => x.meta.role === role);
         if (found.length !== 1) errors.push(`expected exactly one ${role} group, found ${found.length}`);
+    }
+    const sourceAudioRegenGroups = managed.filter((x) => x.meta.role === "source_audio_regen");
+    if (sourceAudioRegenGroups.length > 1) {
+        errors.push(`expected at most one source_audio_regen group, found ${sourceAudioRegenGroups.length}`);
     }
     for (let i = 1; i <= 6; i++) {
         const found = managed.filter((x) => x.meta.role === "extension" && Number(x.meta.index) === i);
@@ -211,13 +264,14 @@ function applyController(controller, { strict = false } = {}) {
     reconciling = true;
     try {
         const state = readState(controller);
+        const parameterErrors = syncExecutionParameters(graph, state, { strict: false });
         const managed = [];
         for (const group of groups(graph)) {
             const meta = controlMeta(group);
             if (!meta) continue;
             managed.push({ group, meta, nodes: memberNodes(group, graph) });
         }
-        const errors = validateManagedGroups(graph, managed, controller);
+        const errors = [...parameterErrors, ...validateManagedGroups(graph, managed, controller)];
         controller._h3ControllerErrors = errors;
         if (errors.length) {
             console.error("H3 AV Extension Controller configuration error:\n" + errors.join("\n"));

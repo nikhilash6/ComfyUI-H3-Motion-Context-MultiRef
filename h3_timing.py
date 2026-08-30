@@ -12,6 +12,14 @@ def largest_h3_video_run(frames: int) -> int:
     return 5 + ((n - 5) // 17) * 17
 
 
+def smallest_h3_video_run(frames: int) -> int:
+    """Smallest exact full-run video-VAE input >= frames: 5, 22, 39, ..."""
+    n = max(1, int(frames))
+    if n <= 5:
+        return 5
+    return 5 + ((n - 5 + 16) // 17) * 17
+
+
 def is_h3_video_run(frames: int) -> bool:
     """True for native full H3 video-VAE runs (5, 22, 39, ...)."""
     n = int(frames)

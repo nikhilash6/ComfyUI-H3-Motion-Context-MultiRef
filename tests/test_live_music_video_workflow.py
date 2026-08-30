@@ -66,9 +66,7 @@ def test_music_controller_defaults_and_group_ownership():
 
 def test_four_global_images_feed_all_twenty_ref2va_nodes():
     data = load(); nodes = _nodes(data); links = _links(data)
-    # These reference LoadImage nodes intentionally use their default titles in
-    # the serialized workflow, so identify them by node type/graph role rather
-    # than optional display-title text.
+    # Identify the four global references by graph type/role rather than optional display titles.
     refs = [n for n in nodes.values() if n["type"] == "LoadImage"]
     assert len(refs) == 4
     assert {n["id"] for n in refs} == {910, 911, 2505, 2506}
@@ -85,24 +83,23 @@ def test_four_global_images_feed_all_twenty_ref2va_nodes():
 
 def test_each_continuation_uses_previous_sampler_latent_directly():
     data = load(); nodes = _nodes(data); links = _links(data)
-    samplers = sorted(
-        [n for n in nodes.values() if n["type"] == "SamplerCustomAdvanced"],
-        key=lambda n: int(n.get("title", "Clip 0 Sampler").split()[1]),
-    )
-    assert len(samplers) == 20
-
-    # The SongMaskedAVContext nodes intentionally have no titles, so derive the
-    # context for each clip from the sampler's actual latent_image connection
-    # instead of relying on node insertion order. This keeps the regression tied
-    # to the graph relationship it is meant to verify.
+    final = next(n for n in nodes.values() if n["type"] == "MiniMaxH3StreamLiveMusicVideoToVHS")
+    samplers = []
     contexts = []
-    for sampler in samplers:
+    for i in range(1, 21):
+        clip_link = _input(final, f"clip_{i}")["link"]
+        assert clip_link is not None
+        sampler = nodes[links[clip_link][1]]
+        assert sampler["type"] == "SamplerCustomAdvanced"
+        samplers.append(sampler)
+
         latent_link = _input(sampler, "latent_image")["link"]
         assert latent_link is not None
         context = nodes[links[latent_link][1]]
         assert context["type"] == "MiniMaxH3SongMaskedAVContext"
         contexts.append(context)
 
+    assert len(samplers) == len(contexts) == 20
     assert _input(contexts[0], "source_latent")["link"] is None
     for i in range(1, 20):
         source_link = _input(contexts[i], "source_latent")["link"]
@@ -233,32 +230,34 @@ def test_bundled_demo_keeps_song_out_of_ref_audio_sockets():
                 assert inp.get("link") is None
 
 
-def test_music_preview_scheduler_topology_prioritizes_each_clip_preview_before_final_stream():
+def test_music_preview_barrier_orders_last_active_preview_before_final_stream():
     data = load(); nodes = _nodes(data); links = _links(data)
     final = next(n for n in nodes.values() if n["type"] == "MiniMaxH3StreamLiveMusicVideoToVHS")
+    barrier = next(n for n in nodes.values() if n["type"] == "MiniMaxH3LastActiveVHSPreviewBarrier")
     sink = next(n for n in nodes.values() if n["type"] == "MiniMaxH3FinalizeVHSOutput")
     assert links[_input(sink, "filenames")["link"]][1] == final["id"]
+    assert links[_input(final, "preview_gate")["link"]][1] == barrier["id"]
 
-    # Runtime contract: the final stream is an intermediate node and the tiny
-    # sink is the terminal OUTPUT_NODE.  Therefore a ready VAEDecode that
-    # directly blocks a VHS preview output is closer to an output than the next
-    # sampler, which only blocks the intermediate final streamer.
     stream_src = (ROOT / "h3_streaming_vhs.py").read_text(encoding="utf-8")
     music_block = stream_src.split("class MiniMaxH3StreamLiveMusicVideoToVHS:", 1)[1]
     assert "OUTPUT_NODE = False" in music_block
+    assert 'if "preview_gate" in kwargs and kwargs["preview_gate"] is None:' in music_block
     sink_block = stream_src.split("class MiniMaxH3FinalizeVHSOutput:", 1)[1].split("class MiniMaxH3StreamLiveMusicVideoToVHS:", 1)[0]
     assert "OUTPUT_NODE = True" in sink_block
 
-    # Identify each sampler from the final stream's clip_N input rather than
-    # relying on optional/custom node titles. Then prove the corresponding
-    # preview decode is fed by that sampler.
     previews = [n for n in nodes.values() if n["type"] == "VHS_VideoCombine"]
+    preview_ids = [2293 + 3 * i for i in range(20)]
+    for i, preview_id in enumerate(preview_ids, 1):
+        preview = nodes[preview_id]
+        assert preview["type"] == "VHS_VideoCombine"
+        assert links[_input(barrier, f"preview_{i}")["link"]][1] == preview_id
+
+    # For active demo clips, prove each preview decode comes from the same sampler
+    # supplied to the final stream; do not rely on optional/custom titles.
     for i in range(1, 7):
         clip_link = _input(final, f"clip_{i}")["link"]
         assert clip_link is not None
         sampler = nodes[links[clip_link][1]]
-        assert sampler["type"] == "SamplerCustomAdvanced"
-
         matching_previews = []
         for preview in previews:
             images_link = _input(preview, "images")["link"]
@@ -270,7 +269,6 @@ def test_music_preview_scheduler_topology_prioritizes_each_clip_preview_before_f
             samples_link = _input(decode, "samples")["link"]
             if samples_link is not None and links[samples_link][1] == sampler["id"]:
                 matching_previews.append(preview)
-
         assert len(matching_previews) == 1
 
 

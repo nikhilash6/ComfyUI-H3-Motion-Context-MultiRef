@@ -40,6 +40,7 @@ def _resample_waveform(*a, **k): return _ext()._resample_waveform(*a, **k)
 def _resize_images(*a, **k): return _ext()._resize_images(*a, **k)
 def _snap_av_context_length(*a, **k): return _ext()._snap_context_length(*a, **k)
 def _stereo_first_batch(*a, **k): return _ext()._stereo_first_batch(*a, **k)
+def _canonical_audio(*a, **k): return _ext()._canonical_audio(*a, **k)
 def _streams_from_latent(*a, **k): return _ext()._streams_from_latent(*a, **k)
 def _snap_music_context_length(*a, **k): return _music()._snap_context_length(*a, **k)
 
@@ -367,14 +368,9 @@ def _assemble_av_audio(
     audio_out = torch.empty((1, 2, total_samples), dtype=torch.float32, device="cpu")
 
     if mode == "existing_video":
-        wave = _stereo_first_batch(source_audio["waveform"], "source_audio")
-        wave = _resample_waveform(
-            wave, int(source_audio["sample_rate"]), audio_sr, "source_audio"
-        )
+        canonical = _canonical_audio(source_audio, audio_sr, int(base_frames))
+        wave = canonical["waveform"].detach().to("cpu", torch.float32)
         want = sample_boundary_from_frames(int(base_frames), audio_sr, FPS)
-        wave = _conform_waveform_length(wave, want, "source audio").detach().to(
-            "cpu", torch.float32
-        )
     else:
         wave, got_sr = _decode_h3_audio_cpu(audio_vae, base_audio_latent)
         wave = _stereo_first_batch(wave, "starter audio")
@@ -506,9 +502,16 @@ def _run_vhs_h264(
 
 
 class MiniMaxH3StreamLiveExtensionAVToVHS:
-    """Stream the final AV Extension timeline directly into VHS H.264 MP4."""
+    """Stream a modular AV Extension timeline directly into VHS H.264 MP4.
 
-    MAX_EXTENSIONS = 6
+    The frontend exposes a user-selected number of ``extension_N`` sockets.
+    Backend support is deliberately wider than the shipped six-extension
+    example so the node can be reused in custom workflows.  Disconnected
+    extension sockets are ignored instead of being treated as errors.
+    """
+
+    MAX_EXTENSIONS = 64
+    DEFAULT_EXTENSION_INPUTS = 6
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -516,9 +519,18 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
             "video_vae": ("VAE",),
             "audio_vae": ("VAE",),
             "start_mode": ("STRING", {"forceInput": True}),
-            "active_extensions": (
+            "input_count": (
                 "INT",
-                {"default": 1, "min": 1, "max": cls.MAX_EXTENSIONS},
+                {
+                    "default": cls.DEFAULT_EXTENSION_INPUTS,
+                    "min": 1,
+                    "max": cls.MAX_EXTENSIONS,
+                    "step": 1,
+                    "tooltip": (
+                        "Number of extension latent sockets shown by the node. "
+                        "Set this value, then click Update inputs."
+                    ),
+                },
             ),
             "context_frames": ("INT", {"default": 39, "min": 5, "max": 9999}),
             "video_overlap_frames": (
@@ -536,7 +548,30 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
             "source_frames": ("IMAGE", {"lazy": True}),
             "source_audio": ("AUDIO", {"lazy": True}),
             "starter_latent": ("LATENT", {"lazy": True}),
+            # Optional execution-order gate. In the bundled AV Extension workflow
+            # this is fed by the last enabled per-extension VHS preview. Requesting
+            # it before any final-stream latent makes that preview finish first.
+            # Custom workflows may leave it disconnected.
+            "preview_gate": ("VHS_FILENAMES", {"lazy": True}),
+            # Optional compatibility/controller cap.  The bundled AV Extension
+            # workflow connects this to its controller parameter so bypassed
+            # sampler groups above the active count remain lazy.  Custom users
+            # can leave it disconnected and simply connect any of the visible
+            # extension sockets they need.
+            "active_extensions": (
+                "INT",
+                {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional cap on extension sockets considered. Leave "
+                        "unconnected for modular/custom workflows."
+                    ),
+                },
+            ),
         }
+        # The browser extension hides sockets above input_count. Declaring the
+        # full supported range here keeps prompt validation/backend execution
+        # compatible with dynamically added sockets.
         for i in range(1, cls.MAX_EXTENSIONS + 1):
             optional[f"extension_{i}"] = ("LATENT", {"lazy": True})
         return {
@@ -552,20 +587,32 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
     RETURN_TYPES = ("VHS_FILENAMES",)
     RETURN_NAMES = ("Filenames",)
     FUNCTION = "stream_to_vhs"
-    OUTPUT_NODE = True
+    # Keep this as an intermediate-output node so ordinary VHS clip previews
+    # retain output scheduling priority. A tiny terminal sink makes the final
+    # stream executable.
+    OUTPUT_NODE = False
+    HAS_INTERMEDIATE_OUTPUT = True
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
-        "Low-RAM final AV Extension output. Decodes one H3 clip at a time, keeps "
-        "only the effective visual seam tail, streams frames into VHS H.264 MP4, "
-        "and preserves the existing exact generated-audio timeline assembly."
+        "Modular low-RAM AV Extension final output. Set Input Count and click "
+        "Update inputs to expose as many extension latent sockets as needed. "
+        "Disconnected sockets are skipped. Clips are decoded one at a time and "
+        "streamed directly into VHS H.264 without materializing the full RGB movie."
     )
+
+    @classmethod
+    def _extension_limit(cls, input_count, active_extensions=None):
+        configured = max(1, min(cls.MAX_EXTENSIONS, int(input_count)))
+        if active_extensions is None:
+            return configured
+        return min(configured, max(0, int(active_extensions)))
 
     def check_lazy_status(
         self,
         video_vae,
         audio_vae,
         start_mode,
-        active_extensions,
+        input_count,
         context_frames,
         video_overlap_frames,
         source_fps,
@@ -579,8 +626,15 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
         source_frames=None,
         source_audio=None,
         starter_latent=None,
+        active_extensions=None,
         **kwargs,
     ):
+        # Strict ordering: if a VHS preview gate is connected, resolve it before
+        # asking ComfyUI for any of the expensive final-stream inputs. This keeps
+        # the last enabled extension preview visible before final assembly starts.
+        if "preview_gate" in kwargs and kwargs["preview_gate"] is None:
+            return ["preview_gate"]
+
         needed = []
         if str(start_mode) == "existing_video":
             if source_frames is None:
@@ -589,10 +643,15 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
                 needed.append("source_audio")
         elif starter_latent is None:
             needed.append("starter_latent")
-        count = max(1, min(self.MAX_EXTENSIONS, int(active_extensions)))
-        for i in range(1, count + 1):
-            if kwargs.get(f"extension_{i}") is None:
-                needed.append(f"extension_{i}")
+
+        # Optional inputs that are not connected are absent from kwargs.
+        # Connected lazy inputs are present with value None until evaluated.
+        # Request only those connected sockets; gaps are intentionally valid.
+        limit = self._extension_limit(input_count, active_extensions)
+        for i in range(1, limit + 1):
+            name = f"extension_{i}"
+            if name in kwargs and kwargs[name] is None:
+                needed.append(name)
         return needed
 
     def stream_to_vhs(
@@ -600,7 +659,7 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
         video_vae,
         audio_vae,
         start_mode="existing_video",
-        active_extensions=1,
+        input_count=DEFAULT_EXTENSION_INPUTS,
         context_frames=39,
         video_overlap_frames=39,
         source_fps=24.0,
@@ -614,19 +673,35 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
         source_frames=None,
         source_audio=None,
         starter_latent=None,
+        preview_gate=None,
+        active_extensions=None,
         prompt=None,
         extra_pnginfo=None,
         unique_id=None,
         **kwargs,
     ):
-        count = max(1, min(self.MAX_EXTENSIONS, int(active_extensions)))
+        limit = self._extension_limit(input_count, active_extensions)
         extension_latents = []
-        for i in range(1, count + 1):
-            value = kwargs.get(f"extension_{i}")
+        extension_slots = []
+        for i in range(1, limit + 1):
+            name = f"extension_{i}"
+            value = kwargs.get(name)
             if value is None:
-                raise ValueError(f"h3_streaming_av: extension_{i} is required")
+                continue
+            extension_slots.append(i)
             extension_latents.append(value)
 
+        if not extension_latents:
+            cap_text = (
+                f" (active_extensions cap={int(active_extensions)})"
+                if active_extensions is not None else ""
+            )
+            raise ValueError(
+                "h3_streaming_av: connect at least one extension latent within "
+                f"the first {limit} configured input socket(s){cap_text}"
+            )
+
+        count = len(extension_latents)
         ext_streams = [_streams_from_latent(x) for x in extension_latents]
         ext_videos = [video for video, _audio in ext_streams]
         raw_frames = [_pixel_frames(int(video.shape[2])) for video in ext_videos]
@@ -640,9 +715,9 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
 
         mode = str(start_mode)
         if mode == "existing_video":
-            if source_frames is None or source_audio is None:
+            if source_frames is None:
                 raise ValueError(
-                    "h3_streaming_av: Existing Video start requires source frames/audio"
+                    "h3_streaming_av: Existing Video start requires source frames"
                 )
             source_idx = _cfr_index_map(
                 int(source_frames.shape[0]), float(source_fps), source_frames.device, FPS
@@ -712,13 +787,21 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
             )
 
         frames = _OneShotFrameSequence(final_frames, factory)
-        max_hold = max(_seam_overlaps([base_frames] + raw_frames, [0] + contexts, video_overlap_frames))
+        max_hold = max(
+            _seam_overlaps(
+                [base_frames] + raw_frames,
+                [0] + contexts,
+                video_overlap_frames,
+            )
+        )
         _LOG.info(
-            "h3_streaming_av: streaming %d frames from %s + %d extensions into VHS; "
-            "old final RGB buffer %.2f GiB is not allocated; max retained seam %d frames (%.2f GiB)",
+            "h3_streaming_av: streaming %d frames from %s + %d connected extensions "
+            "(slots %s) into VHS; old final RGB buffer %.2f GiB is not allocated; "
+            "max retained seam %d frames (%.2f GiB)",
             final_frames,
             mode,
             count,
+            ",".join(str(i) for i in extension_slots),
             _rgb_gib(final_frames, height, width),
             max_hold,
             _rgb_gib(max_hold, height, width),
@@ -738,54 +821,145 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
         )
 
 
-class MiniMaxH3FinalizeVHSOutput:
-    """Tiny terminal output sink used to keep final streaming behind clip previews.
+class MiniMaxH3LastActiveVHSPreviewBarrier:
+    """Resolve the highest enabled VHS preview before final output.
 
-    The actual streaming node returns the VHS filenames and UI preview, but is
-    intentionally not itself an OUTPUT_NODE.  This sink makes the stream part
-    of the executable graph without giving the entire all-clips dependency
-    chain the same immediate output priority as each per-clip VHS preview.
+    Preview inputs are lazy. Only the highest connected preview at or below the
+    optional controller cap is requested, so both AV Extension and Music Video
+    can guarantee that the last active preview finishes before final assembly.
+    If preview groups are disabled, the barrier is an immediate no-op.
+    """
+
+    MAX_PREVIEWS = 64
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        optional = {
+            "active_extensions": ("INT", {"forceInput": True}),
+            "active_clips": ("INT", {"forceInput": True}),
+        }
+        for i in range(1, cls.MAX_PREVIEWS + 1):
+            optional[f"preview_{i}"] = ("VHS_FILENAMES", {"lazy": True})
+        return {"optional": optional}
+
+    RETURN_TYPES = ("VHS_FILENAMES",)
+    RETURN_NAMES = ("preview_gate",)
+    FUNCTION = "select"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Execution-order barrier for H3 workflows. It waits for the highest "
+        "enabled VHS preview before final assembly."
+    )
+
+    @classmethod
+    def _limit(cls, active_extensions=None, active_clips=None):
+        active = active_clips if active_clips is not None else active_extensions
+        if active is None:
+            return cls.MAX_PREVIEWS
+        return max(0, min(cls.MAX_PREVIEWS, int(active)))
+
+    def check_lazy_status(self, active_extensions=None, active_clips=None, **kwargs):
+        limit = self._limit(active_extensions, active_clips)
+        for i in range(limit, 0, -1):
+            name = f"preview_{i}"
+            # Disconnected optional sockets are absent. A connected lazy preview
+            # is present with value None until its VHS output has completed.
+            if name in kwargs:
+                return [name] if kwargs[name] is None else []
+        return []
+
+    def select(self, active_extensions=None, active_clips=None, **kwargs):
+        limit = self._limit(active_extensions, active_clips)
+        for i in range(limit, 0, -1):
+            value = kwargs.get(f"preview_{i}")
+            if value is not None:
+                return (value,)
+        # The downstream stream node treats this value only as an execution gate.
+        # An empty VHS_FILENAMES payload is therefore a valid no-preview sentinel.
+        return ([],)
+
+
+class MiniMaxH3FinalizeVHSOutput:
+    """Tiny terminal sink for direct-stream final outputs.
+
+    ``filenames`` is optional deliberately: bypassing/removing the upstream final
+    combine node leaves a valid no-op output node instead of a prompt-validation
+    error. When connected, it simply keeps the streaming node in the executable
+    graph.
     """
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"filenames": ("VHS_FILENAMES",)}}
+        return {"optional": {"filenames": ("VHS_FILENAMES", {"lazy": True})}}
 
     RETURN_TYPES = ()
     FUNCTION = "finalize"
     OUTPUT_NODE = True
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
-        "Execution sink for H3 direct-stream final outputs. Keeps per-clip VHS "
-        "previews scheduler-prioritized while preserving the low-RAM final stream."
+        "Optional execution sink for H3 direct-stream outputs. Safe when the "
+        "upstream final stream node is bypassed or disconnected."
     )
 
-    def finalize(self, filenames):
+    def check_lazy_status(self, **kwargs):
+        # Disconnected optional sockets are absent; a connected lazy input is
+        # present as None until the upstream final stream has completed.
+        if "filenames" in kwargs and kwargs["filenames"] is None:
+            return ["filenames"]
+        return []
+
+    def finalize(self, filenames=None):
         return ()
 
 
 class MiniMaxH3StreamLiveMusicVideoToVHS:
-    """Stream the Music Video timeline directly into VHS H.264 MP4."""
+    """Stream a modular Music Video timeline directly into VHS H.264 MP4."""
 
-    MAX_CLIPS = 20
+    MAX_CLIPS = 64
+    DEFAULT_CLIP_INPUTS = 20
 
     @classmethod
     def INPUT_TYPES(cls):
         required = {
             "video_vae": ("VAE",),
             "master_audio": ("AUDIO",),
-            "active_clips": (
+            "input_count": (
                 "INT",
-                {"default": 1, "min": 1, "max": cls.MAX_CLIPS},
+                {
+                    "default": cls.DEFAULT_CLIP_INPUTS,
+                    "min": 1,
+                    "max": cls.MAX_CLIPS,
+                    "step": 1,
+                    "tooltip": (
+                        "Number of clip latent sockets shown by the node. "
+                        "Set this value, then click Update inputs."
+                    ),
+                },
             ),
             "context_frames": ("INT", {"default": 39, "min": 5, "max": 9999}),
             "video_overlap_frames": (
-                "INT",
-                {"default": 39, "min": 0, "max": 9999},
+                "INT", {"default": 39, "min": 0, "max": 9999}
             ),
         }
         required.update(_vhs_h264_inputs("video/h3_music_video", False))
-        optional = {}
+        optional = {
+            # Optional execution-order gate. In the bundled Music Video workflow
+            # this is fed by the highest enabled per-clip VHS preview.
+            "preview_gate": ("VHS_FILENAMES", {"lazy": True}),
+            # Optional controller cap. The bundled workflow mirrors Active Clips
+            # into a cache-isolated PrimitiveInt and connects it here. Standalone
+            # users can leave it disconnected and use the connected clip prefix.
+            "active_clips": (
+                "INT",
+                {
+                    "forceInput": True,
+                    "tooltip": (
+                        "Optional cap on clip sockets considered. Leave unconnected "
+                        "for modular/custom workflows."
+                    ),
+                },
+            ),
+        }
         for i in range(1, cls.MAX_CLIPS + 1):
             optional[f"clip_{i}"] = ("LATENT", {"lazy": True})
         return {
@@ -801,25 +975,61 @@ class MiniMaxH3StreamLiveMusicVideoToVHS:
     RETURN_TYPES = ("VHS_FILENAMES",)
     RETURN_NAMES = ("Filenames",)
     FUNCTION = "stream_to_vhs"
-    # Do not make this node an OUTPUT_NODE.  Its lazy all-clips inputs otherwise
-    # compete with each clip's VHS preview branch in ComfyUI's output-priority
-    # scheduler and can defer previews until the final assembly.  A tiny
-    # MiniMaxH3FinalizeVHSOutput sink after this node keeps it executable while
-    # the nearer VAEDecode -> VHS preview branches win scheduler priority.
     OUTPUT_NODE = False
     HAS_INTERMEDIATE_OUTPUT = True
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
-        "Low-RAM final Music Video output. Decodes one H3 clip at a time, keeps "
-        "only the effective visual seam tail, streams directly into VHS H.264 MP4, "
-        "and muxes the untouched master song."
+        "Modular low-RAM final Music Video output. Set Input Count and click "
+        "Update inputs to expose clip latent sockets. Standalone workflows may "
+        "leave trailing sockets disconnected; connected clips must remain a "
+        "contiguous prefix because each clip belongs to a fixed master-song window. "
+        "Clips are decoded one at a time and the untouched master song is muxed."
     )
+
+    @classmethod
+    def _clip_limit(cls, input_count, active_clips=None):
+        configured = max(1, min(cls.MAX_CLIPS, int(input_count)))
+        if active_clips is None:
+            return configured
+        return min(configured, max(0, int(active_clips)))
+
+    @classmethod
+    def _connected_slots(cls, limit, kwargs):
+        return [i for i in range(1, limit + 1) if f"clip_{i}" in kwargs]
+
+    @classmethod
+    def _validate_connected_prefix(cls, limit, active_clips, kwargs):
+        slots = cls._connected_slots(limit, kwargs)
+        if active_clips is not None:
+            expected = list(range(1, limit + 1))
+            missing = [i for i in expected if i not in slots]
+            if missing:
+                raise ValueError(
+                    "h3_streaming_music: active clip inputs must be connected as a "
+                    f"contiguous sequence; missing clip_{missing[0]} within active_clips={int(active_clips)}"
+                )
+            return expected
+        if not slots:
+            raise ValueError(
+                "h3_streaming_music: connect at least one clip latent within the "
+                f"first {limit} configured input socket(s)"
+            )
+        last = max(slots)
+        expected = list(range(1, last + 1))
+        missing = [i for i in expected if i not in slots]
+        if missing:
+            raise ValueError(
+                "h3_streaming_music: connected clip inputs must form a contiguous "
+                f"prefix from clip_1; missing clip_{missing[0]} before clip_{last}. "
+                "Music Video clips cannot be compacted across timeline gaps."
+            )
+        return expected
 
     def check_lazy_status(
         self,
         video_vae,
         master_audio,
-        active_clips,
+        input_count,
         context_frames,
         video_overlap_frames,
         filename_prefix,
@@ -828,20 +1038,29 @@ class MiniMaxH3StreamLiveMusicVideoToVHS:
         save_metadata,
         trim_to_audio,
         save_output,
+        active_clips=None,
         **kwargs,
     ):
-        count = max(1, min(self.MAX_CLIPS, int(active_clips)))
-        return [
-            f"clip_{i}"
-            for i in range(1, count + 1)
-            if kwargs.get(f"clip_{i}") is None
-        ]
+        # Resolve the final active clip preview before requesting any sampler
+        # latents. This makes preview-before-final ordering deterministic.
+        if "preview_gate" in kwargs and kwargs["preview_gate"] is None:
+            return ["preview_gate"]
+
+        limit = self._clip_limit(input_count, active_clips)
+        # Only connected sockets appear in kwargs. When a controller cap is
+        # present, all sockets inside that active prefix are expected to exist.
+        if active_clips is not None:
+            names = [f"clip_{i}" for i in range(1, limit + 1)]
+        else:
+            connected = self._connected_slots(limit, kwargs)
+            names = [f"clip_{i}" for i in connected]
+        return [name for name in names if name in kwargs and kwargs[name] is None]
 
     def stream_to_vhs(
         self,
         video_vae,
         master_audio,
-        active_clips=1,
+        input_count=DEFAULT_CLIP_INPUTS,
         context_frames=39,
         video_overlap_frames=39,
         filename_prefix="video/h3_music_video",
@@ -850,18 +1069,19 @@ class MiniMaxH3StreamLiveMusicVideoToVHS:
         save_metadata=False,
         trim_to_audio=False,
         save_output=True,
+        preview_gate=None,
+        active_clips=None,
         prompt=None,
         extra_pnginfo=None,
         unique_id=None,
         **kwargs,
     ):
-        count = max(1, min(self.MAX_CLIPS, int(active_clips)))
-        latents = []
-        for i in range(1, count + 1):
-            value = kwargs.get(f"clip_{i}")
-            if value is None:
-                raise ValueError(f"h3_streaming_music: clip_{i} is required")
-            latents.append(value)
+        limit = self._clip_limit(input_count, active_clips)
+        slots = self._validate_connected_prefix(limit, active_clips, kwargs)
+        latents = [kwargs[f"clip_{i}"] for i in slots]
+        if any(value is None for value in latents):
+            raise ValueError("h3_streaming_music: an active clip latent was not resolved")
+        count = len(latents)
 
         streams = [_streams_from_latent(latent) for latent in latents]
         videos = [video for video, _audio in streams]

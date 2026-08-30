@@ -87,20 +87,52 @@ def _function_mentions_native_payload(fn):
     return False
 
 
-def _native_h3_mask_hooks(cls):
-    """Recognize the native model_base half of PR #15375 (or equivalent).
+def _function_calls_native_helper(fn):
+    """Recognize the merged PR #15375 helper path in current ComfyUI.
 
-    The compatibility layer installs process_denoise_mask/scale_latent_inpaint,
-    but deliberately does *not* install MiniMaxH3.process_timestep. Requiring a
-    subclass-owned process_timestep that accepts both AV mask names therefore
-    distinguishes native core integration from our fallback after it has been
-    activated.
+    Current H3 extra_conds no longer needs to spell both output keys itself;
+    it delegates mask extraction to _denoise_mask_conds().  Looking for that
+    call plus the denoise_mask input lets this compatibility layer retire on
+    the native helper architecture without depending on source text.
     """
+    for item in _walk_wrapped(fn):
+        if _is_ours(item):
+            continue
+        strings = set(_code_strings(getattr(item, "__code__", None)) or ())
+        if "denoise_mask" in strings and "_denoise_mask_conds" in strings:
+            return True
+    return False
+
+
+def _native_h3_mask_hooks(cls, fn):
+    """Recognize native PR #15375 model_base implementations, old and new."""
     if cls is None:
         return False
+
+    # Current merged architecture (Aug-15+): the mask work lives in four
+    # MiniMaxH3 helpers and scale_latent_inpaint consumes x+denoise_mask.
+    scale = cls.__dict__.get("scale_latent_inpaint")
+    merged_helpers = all(callable(cls.__dict__.get(name)) for name in (
+        "_pool_masks_to_token_grid",
+        "_token_grid_masks",
+        "_denoise_mask_values",
+        "_denoise_mask_conds",
+    ))
+    merged_path = bool(
+        merged_helpers
+        and _function_calls_native_helper(fn)
+        and callable(scale)
+        and _signature_has(scale, "x", "denoise_mask")
+    )
+    if merged_path:
+        return True
+
+    # Older native architecture retained for backwards compatibility with
+    # ComfyUI builds from before the helper refactor.  Our own compatibility
+    # layer deliberately does not install process_timestep, so this remains a
+    # useful native-only fingerprint for those versions.
     process_step = cls.__dict__.get("process_timestep")
     process_mask = cls.__dict__.get("process_denoise_mask")
-    scale = cls.__dict__.get("scale_latent_inpaint")
     return bool(
         callable(process_step)
         and _signature_has(process_step, "denoise_mask", "audio_denoise_mask")
@@ -117,7 +149,7 @@ def _native_av_mask_payload(cls, fn):
         fn
         and (
             _function_mentions_native_payload(fn)
-            or _native_h3_mask_hooks(cls)
+            or _native_h3_mask_hooks(cls, fn)
         )
     )
 
@@ -126,7 +158,7 @@ def capability_status():
     cls = getattr(model_base, "MiniMaxH3", None)
     fn = getattr(cls, "extra_conds", None) if cls is not None else None
     direct = bool(fn and _function_mentions_native_payload(fn))
-    native_hooks = _native_h3_mask_hooks(cls)
+    native_hooks = _native_h3_mask_hooks(cls, fn)
     native = bool(fn and (direct or native_hooks))
     return {
         "available": fn is not None,

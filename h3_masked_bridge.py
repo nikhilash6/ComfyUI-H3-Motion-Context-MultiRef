@@ -14,6 +14,8 @@ import logging
 
 import torch
 
+from .h3_audio_grid import audio_grid_geometry, encode_exact_audio_grid
+
 
 try:
     import torchaudio
@@ -199,46 +201,42 @@ def _encode_video_window(vae, frames, width, height, crop, n, label):
 
 
 def _encode_audio_window(audio_vae, canonical_audio, n, side, label):
-    vae_sr = int(getattr(audio_vae, "audio_sample_rate", 32000))
-    samples = int(round(int(n) / FPS * vae_sr))
     waveform = canonical_audio["waveform"]
-    if int(waveform.shape[-1]) < samples:
-        raise ValueError(
-            "h3_masked_bridge: %s audio is shorter than the selected %d-frame window"
-            % (label, int(n))
-        )
-    if side == "tail":
-        window = waveform[..., -samples:]
-    elif side == "head":
-        window = waveform[..., :samples]
-    else:
-        raise ValueError("h3_masked_bridge: internal invalid audio side %r" % side)
-
-    encoded = audio_vae.encode(window.movedim(1, -1))
-    if getattr(encoded, "ndim", 0) != 4:
-        raise ValueError(
-            "h3_masked_bridge: %s audio VAE returned %s; expected [B,C,2,T]"
-            % (label, tuple(getattr(encoded, "shape", ())))
-        )
-
     exact_steps = int(n) / FPS * AUDIO_HZ
     expected = int(round(exact_steps))
     if abs(exact_steps - expected) > 1e-9:
         _LOG.warning(
             "h3_masked_bridge: %d preserved frames end between H3 audio ticks "
-            "(%.6f -> %d steps); 39/90/141/... are exact AV boundaries",
+            "(%.6f -> %d steps); using a seam-aligned exact audio-grid window",
             int(n), exact_steps, expected,
         )
-    got = int(encoded.shape[-1])
-    if got < expected:
-        raise RuntimeError(
-            "h3_masked_bridge: %s needs %d audio latent steps but VAE produced %d"
-            % (label, expected, got)
+
+    _sr, samples_per_latent, grid_samples = audio_grid_geometry(audio_vae, expected)
+    if int(waveform.shape[-1]) < grid_samples:
+        raise ValueError(
+            "h3_masked_bridge: %s audio is shorter than the %d-step H3 audio-grid window"
+            % (label, expected)
         )
-    if got > expected:
-        # Preserve the physical side of the source window. A tail is end-aligned;
-        # a head is start-aligned.
-        encoded = encoded[..., -expected:] if side == "tail" else encoded[..., :expected]
+
+    # The bridge seam is the authoritative endpoint: the start clip's tail must
+    # end exactly at the generated middle, while the end clip's head must start
+    # exactly there.  For non-shared 24/40-Hz boundaries this intentionally
+    # shifts only the *outer* edge by <= half an audio tick instead of allowing
+    # Comfy's generic VAE center-crop to shift the seam itself.
+    if side == "tail":
+        window = waveform[..., -grid_samples:]
+    elif side == "head":
+        window = waveform[..., :grid_samples]
+    else:
+        raise ValueError("h3_masked_bridge: internal invalid audio side %r" % side)
+
+    encoded, _diag = encode_exact_audio_grid(
+        audio_vae, window, expected, "h3_masked_bridge: %s" % label
+    )
+    _LOG.debug(
+        "h3_masked_bridge: %s exact grid %d steps x %d samples (%s-aligned)",
+        label, expected, samples_per_latent, side,
+    )
     return encoded[:1], expected
 
 

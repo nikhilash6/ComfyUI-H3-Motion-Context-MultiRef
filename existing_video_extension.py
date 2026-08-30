@@ -6,16 +6,26 @@ needed from ComfyUI PR #15375. No ComfyUI source files are modified on disk.
 """
 
 import gc
+import json
 import logging
+import os
+import shutil
+import subprocess
 from fractions import Fraction
 
+import numpy as np
 import torch
+
+from .h3_audio_grid import audio_grid_geometry, encode_exact_audio_grid
 
 import comfy.nested_tensor
 import comfy.utils
 
 from .h3_compat import ensure_existing_video_compat
-from .h3_timing import largest_h3_video_run, is_exact_av_boundary
+from .h3_timing import (
+    largest_h3_video_run, smallest_h3_video_run, is_exact_av_boundary,
+    sample_boundary_from_frames,
+)
 
 try:
     import torchaudio
@@ -74,6 +84,37 @@ def _streams_from_latent(latent):
             % (tuple(audio.shape),)
         )
     return video, audio
+
+
+def _parse_hold_map(text):
+    """Read the JSON hold map emitted by MAINodes H3 Time Smear."""
+    text = str(text or "").strip()
+    if not text:
+        raise ValueError("h3_derope_context: hold_map is empty")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("h3_derope_context: invalid JSON hold_map: %s" % exc) from exc
+    holds = payload.get("holds") if isinstance(payload, dict) else None
+    if not isinstance(holds, list) or not holds:
+        raise ValueError("h3_derope_context: hold_map needs a non-empty 'holds' list")
+    values = []
+    for value in holds:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("h3_derope_context: hold factors must be integers")
+        if value < 1:
+            raise ValueError("h3_derope_context: hold factors must be positive")
+        values.append(value)
+    world_len = payload.get("world_len")
+    if world_len is not None:
+        if isinstance(world_len, bool) or not isinstance(world_len, int):
+            raise ValueError("h3_derope_context: hold_map world_len must be an integer")
+        if world_len != len(values):
+            raise ValueError(
+                "h3_derope_context: hold_map world_len %s does not match %d holds"
+                % (world_len, len(values))
+            )
+    return values
 
 
 def _resize_images(images, width, height, crop, chunk=32):
@@ -244,16 +285,26 @@ def _conform_waveform_length(waveform, want, label, max_fractional_change=0.005)
     return conformed
 
 
+def _silent_audio(target_sr, frame_count):
+    target_sr = int(target_sr)
+    want = sample_boundary_from_frames(int(frame_count), target_sr, int(FPS))
+    return {
+        "waveform": torch.zeros((1, 2, want), dtype=torch.float32, device="cpu"),
+        "sample_rate": target_sr,
+    }
+
+
 def _canonical_audio(audio, target_sr, frame_count):
     if audio is None:
-        raise ValueError(
-            "h3_masked_extension: existing-video AV extension requires source_audio"
+        _LOG.info(
+            "h3_masked_extension: source has no audio input; using exact-duration silence"
         )
+        return _silent_audio(target_sr, frame_count)
     waveform = _stereo_first_batch(audio["waveform"], "source_audio")
     waveform = _resample_waveform(
         waveform, int(audio["sample_rate"]), int(target_sr), "source_audio"
     )
-    want = int(round(int(frame_count) / FPS * int(target_sr)))
+    want = sample_boundary_from_frames(int(frame_count), int(target_sr), int(FPS))
     waveform = _conform_waveform_length(waveform, want, "source audio")
     return {"waveform": waveform, "sample_rate": int(target_sr)}
 
@@ -364,6 +415,383 @@ def _release_decode_memory():
         model_management.soft_empty_cache()
     except Exception:
         pass
+
+
+class MiniMaxH3SourceAudioRegenLength:
+    """Resolve a whole source clip onto the next exact H3 video-VAE run."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source_frames": ("IMAGE", {
+                    "tooltip": "Source video frames. The count is normalized to H3's 24 fps timeline before padding to an exact H3 run."
+                }),
+                "source_fps": ("FLOAT", {
+                    "default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001,
+                }),
+            }
+        }
+
+    RETURN_TYPES = ("INT", "INT")
+    RETURN_NAMES = ("h3_length", "source_frames_24fps")
+    FUNCTION = "resolve"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "For full source-audio regeneration, converts the source duration to 24 fps "
+        "and pads only the end to the next native H3 video-VAE length (5, 22, 39, ...)."
+    )
+
+    def resolve(self, source_frames, source_fps=24.0):
+        if getattr(source_frames, "ndim", 0) != 4 or int(source_frames.shape[0]) < 1:
+            raise ValueError("h3_source_audio_regen: source_frames must be IMAGE [N,H,W,C]")
+        idx = _cfr_index_map(
+            int(source_frames.shape[0]), float(source_fps), source_frames.device, FPS
+        )
+        source_count = int(idx.numel())
+        h3_length = smallest_h3_video_run(source_count)
+        _LOG.info(
+            "h3_source_audio_regen: source timeline %d frames -> H3 run %d frames (%d-frame tail pad)",
+            source_count,
+            h3_length,
+            h3_length - source_count,
+        )
+        return (h3_length, source_count)
+
+
+class MiniMaxH3SourceAudioRegenMask:
+    """Protect the complete source video while leaving the complete audio free to denoise."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "latent": ("LATENT", {
+                    "tooltip": "Fresh H3 AV latent whose length is driven by H3 Source Audio Regen Length."
+                }),
+                "vae": ("VAE", {"tooltip": "MiniMax H3 video VAE."}),
+                "source_frames": ("IMAGE", {
+                    "tooltip": "The complete source video. All visual latent steps are protected; only audio is regenerated."
+                }),
+                "source_fps": ("FLOAT", {
+                    "default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001,
+                }),
+                "crop": (["disabled", "center"], {"default": "disabled"}),
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    RETURN_NAMES = ("latent",)
+    FUNCTION = "prepare"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Full-source H3 audio regeneration mask. The complete source video is encoded "
+        "and protected with video mask 0 while the complete H3 audio stream keeps mask 1. "
+        "H3 therefore regenerates soundtrack only, without changing source video pixels."
+    )
+
+    def prepare(self, latent, vae, source_frames, source_fps=24.0, crop="disabled"):
+        _require_h3_mask_support()
+        target_video, target_audio = _streams_from_latent(latent)
+        if int(target_video.shape[0]) != 1 or int(target_audio.shape[0]) != 1:
+            raise ValueError("h3_source_audio_regen: batch size 1 is required")
+        if getattr(source_frames, "ndim", 0) != 4 or int(source_frames.shape[0]) < 1:
+            raise ValueError("h3_source_audio_regen: source_frames must be IMAGE [N,H,W,C]")
+
+        target_frames = _pixel_frames(int(target_video.shape[2]))
+        idx = _cfr_index_map(
+            int(source_frames.shape[0]), float(source_fps), source_frames.device, FPS
+        )
+        source_count = int(idx.numel())
+        expected_target = smallest_h3_video_run(source_count)
+        if target_frames != expected_target:
+            raise ValueError(
+                "h3_source_audio_regen: target latent covers %d frames, but the complete "
+                "source needs the next exact H3 run of %d frames. Drive the Reference-to-Video "
+                "length from H3 Source Audio Regen Length."
+                % (target_frames, expected_target)
+            )
+
+        if target_frames > source_count:
+            pad_count = target_frames - source_count
+            tail = idx[-1:].repeat(pad_count)
+            idx = torch.cat((idx, tail), dim=0)
+        width = int(target_video.shape[4]) * 16
+        height = int(target_video.shape[3]) * 16
+        video = source_frames.index_select(0, idx)
+        video = _resize_images(video, width, height, crop)
+        encoded = vae.encode(video)
+        if getattr(encoded, "ndim", 0) == 4:
+            encoded = encoded.unsqueeze(0)
+        if getattr(encoded, "ndim", 0) != 5:
+            raise ValueError(
+                "h3_source_audio_regen: video VAE returned %s, expected [B,C,T,H,W]"
+                % (tuple(getattr(encoded, "shape", ())),)
+            )
+        encoded = encoded[:1].to(device=target_video.device, dtype=target_video.dtype)
+        if tuple(encoded.shape) != tuple(target_video.shape):
+            raise ValueError(
+                "h3_source_audio_regen: encoded source video shape %s does not match target %s"
+                % (tuple(encoded.shape), tuple(target_video.shape))
+            )
+
+        out_video = encoded.clone()
+        out_audio = target_audio.clone()
+        video_mask = torch.zeros(
+            (1, 1, int(out_video.shape[2]), int(out_video.shape[3]), int(out_video.shape[4])),
+            device=out_video.device,
+            dtype=torch.float32,
+        )
+        audio_mask = torch.ones(
+            (1, 1, int(out_audio.shape[2]), int(out_audio.shape[3])),
+            device=out_audio.device,
+            dtype=torch.float32,
+        )
+        out = latent.copy()
+        out["samples"] = comfy.nested_tensor.NestedTensor((out_video, out_audio))
+        out["noise_mask"] = comfy.nested_tensor.NestedTensor((video_mask, audio_mask))
+        _LOG.info(
+            "h3_source_audio_regen: protected all %d H3 video frames; regenerating all %d audio latent ticks",
+            target_frames,
+            int(out_audio.shape[-1]),
+        )
+        return (out,)
+
+def _ffmpeg_executable():
+    """Resolve an ffmpeg executable without importing VideoHelperSuite."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.isfile(exe):
+            return exe
+    except Exception:
+        pass
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    raise RuntimeError(
+        "h3_source_audio: ffmpeg was not found (imageio-ffmpeg or system ffmpeg required)"
+    )
+
+
+def _prompt_node(prompt, node_id):
+    if not isinstance(prompt, dict):
+        return None
+    for key in (str(node_id), node_id):
+        if key in prompt:
+            return prompt[key]
+    return None
+
+
+def _vhs_source_from_prompt(prompt, unique_id, video_info=None):
+    """Resolve the upstream VHS_LoadVideo selection without touching its AUDIO output."""
+    current = _prompt_node(prompt, unique_id)
+    if not isinstance(current, dict):
+        raise RuntimeError(
+            "h3_source_audio: queued prompt context is unavailable; reload the bundled NEW - AV Extension workflow"
+        )
+    inputs = current.get("inputs", {})
+    link = inputs.get("video_info")
+    if not (isinstance(link, (list, tuple)) and len(link) >= 2):
+        raise RuntimeError(
+            "h3_source_audio: video_info must be linked directly from the source VHS_LoadVideo node"
+        )
+    source = _prompt_node(prompt, link[0])
+    if not isinstance(source, dict) or str(source.get("class_type")) != "VHS_LoadVideo":
+        raise RuntimeError(
+            "h3_source_audio: video_info must come directly from VHS_LoadVideo"
+        )
+    source_inputs = source.get("inputs", {})
+    video_name = source_inputs.get("video")
+    if not isinstance(video_name, str) or not video_name:
+        raise ValueError("h3_source_audio: no source video is selected in VHS_LoadVideo")
+
+    force_rate = float(source_inputs.get("force_rate", 0) or 0)
+    skip = max(0, int(source_inputs.get("skip_first_frames", 0) or 0))
+    select_n = max(1, int(source_inputs.get("select_every_nth", 1) or 1))
+    source_fps = 0.0
+    if isinstance(video_info, dict):
+        source_fps = float(video_info.get("source_fps", 0) or 0)
+        loaded_fps = float(video_info.get("loaded_fps", 0) or 0)
+    else:
+        loaded_fps = 0.0
+    base_rate = force_rate if force_rate > 0 else source_fps
+    start_seconds = (skip / base_rate) if base_rate > 0 else 0.0
+    return {
+        "video": video_name,
+        "start_seconds": start_seconds,
+        "select_every_nth": select_n,
+        "loaded_fps": loaded_fps,
+        "force_rate": force_rate,
+    }
+
+
+def _safe_source_audio(video_name, target_sr, frame_count, start_seconds=0.0):
+    """Extract source audio eagerly; a genuinely missing stream becomes silence."""
+    if not video_name:
+        raise ValueError("h3_source_audio: no source video filename was provided")
+
+    try:
+        import folder_paths
+        path = folder_paths.get_annotated_filepath(
+            video_name, folder_paths.get_input_directory()
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "h3_source_audio: failed to resolve source video %r: %s"
+            % (video_name, exc)
+        ) from exc
+
+    duration = int(frame_count) / float(FPS)
+    args = [_ffmpeg_executable(), "-v", "error", "-i", path]
+    if float(start_seconds) > 0:
+        args += ["-ss", "%.12g" % float(start_seconds)]
+    args += [
+        "-t", "%.12g" % duration,
+        "-map", "0:a:0",
+        "-vn",
+        "-ac", "2",
+        "-ar", str(int(target_sr)),
+        "-f", "f32le",
+        "-",
+    ]
+    proc = subprocess.run(args, capture_output=True, check=False)
+    if proc.returncode != 0:
+        msg = proc.stderr.decode("utf-8", errors="replace")
+        missing_markers = (
+            "matches no streams",
+            "does not contain any stream",
+            "Output file does not contain any stream",
+            "Stream map '0:a:0' matches no streams",
+            "Stream specifier ':a:0'",
+        )
+        if any(marker in msg for marker in missing_markers):
+            _LOG.info(
+                "h3_source_audio: %s has no audio stream; using exact-duration silence",
+                video_name,
+            )
+            return _silent_audio(target_sr, frame_count)
+        raise RuntimeError(
+            "h3_source_audio: ffmpeg could not extract audio from %s:\n%s"
+            % (video_name, msg.strip())
+        )
+
+    raw = np.frombuffer(proc.stdout, dtype=np.float32)
+    if raw.size < 2:
+        return _silent_audio(target_sr, frame_count)
+    usable = (raw.size // 2) * 2
+    raw = raw[:usable].copy().reshape(-1, 2).T
+    waveform = torch.from_numpy(raw).unsqueeze(0)
+    audio = {"waveform": waveform, "sample_rate": int(target_sr)}
+    return _canonical_audio(audio, int(target_sr), int(frame_count))
+
+
+class MiniMaxH3SourceAudioPolicy:
+    """Keep source audio safely, substitute silence, or use full H3 regeneration."""
+
+    MODE_KEEP = "keep_source"
+    MODE_REGENERATE = "regenerate_h3"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio_vae": ("VAE", {"tooltip": "MiniMax H3 audio VAE; used to decode regenerated source audio."}),
+                "mode": ("STRING", {"forceInput": True}),
+                "source_frames": ("IMAGE", {
+                    "tooltip": "Source frames used to derive the exact final audio duration."
+                }),
+                "video_info": ("VHS_VIDEOINFO", {
+                    "forceInput": True,
+                    "tooltip": "Connect VHS_LoadVideo.video_info. The VHS audio socket must remain unconnected; this link identifies the selected source file safely."
+                }),
+                "source_fps": ("FLOAT", {
+                    "default": 24.0, "min": 1.0, "max": 240.0, "step": 0.001,
+                }),
+            },
+            "optional": {
+                "regenerated_latent": ("LATENT", {
+                    "lazy": True,
+                    "tooltip": "Sampler output from H3 Source Audio Regen Mask. Requested only in Regenerate with H3 mode."
+                }),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("source_audio",)
+    FUNCTION = "select"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Source-audio policy for AV Extensions. Keep mode reads the source file directly with ffmpeg; "
+        "a genuinely missing audio stream becomes exact-duration silence. The VHS_LoadVideo audio output "
+        "must stay unconnected. Regenerate mode decodes a soundtrack generated by H3 across the complete source clip."
+    )
+
+    @classmethod
+    def IS_CHANGED(cls, mode=MODE_KEEP, **kwargs):
+        return "h3-source-audio:%s" % str(mode)
+
+    def check_lazy_status(
+        self, audio_vae, mode, source_frames, video_info, source_fps,
+        regenerated_latent=None, **kwargs,
+    ):
+        if str(mode) == self.MODE_REGENERATE:
+            return [] if regenerated_latent is not None else ["regenerated_latent"]
+        return []
+
+    def select(
+        self, audio_vae, mode, source_frames, video_info, source_fps=24.0,
+        regenerated_latent=None, prompt=None, unique_id=None,
+    ):
+        idx = _cfr_index_map(
+            int(source_frames.shape[0]), float(source_fps), source_frames.device, FPS
+        )
+        source_count = int(idx.numel())
+        mode = str(mode)
+        if mode != self.MODE_REGENERATE:
+            output_sr = int(
+                getattr(
+                    audio_vae,
+                    "audio_sample_rate_output",
+                    getattr(audio_vae, "audio_sample_rate", 44100),
+                )
+            )
+            source = _vhs_source_from_prompt(prompt, unique_id, video_info)
+            loaded_fps = float(source.get("loaded_fps", 0) or 0)
+            if loaded_fps > 0 and abs(loaded_fps - float(source_fps)) > 1e-4:
+                raise ValueError(
+                    "h3_source_audio: VHS loaded_fps %.6g does not match source_fps %.6g. "
+                    "Keep the bundled VHS source loader at 24 fps / select every 1, or update source_fps to match."
+                    % (loaded_fps, float(source_fps))
+                )
+            return (_safe_source_audio(
+                source["video"], output_sr, source_count, source["start_seconds"]
+            ),)
+
+        if regenerated_latent is None:
+            raise ValueError(
+                "h3_source_audio_regen: regenerated_latent is required in Regenerate with H3 mode"
+            )
+        _video, audio_latent = _streams_from_latent(regenerated_latent)
+        waveform, sr = _decode_h3_audio_cpu(audio_vae, audio_latent)
+        waveform = _stereo_first_batch(waveform, "regenerated source audio")
+        want = sample_boundary_from_frames(source_count, sr, int(FPS))
+        have = int(waveform.shape[-1])
+        if have >= want:
+            waveform = _fit_waveform(waveform, want, "regenerated source audio")
+        else:
+            waveform = _conform_waveform_length(
+                waveform, want, "regenerated source audio"
+            )
+        _LOG.info(
+            "h3_source_audio_regen: selected regenerated soundtrack, %d frames / %d samples at %d Hz",
+            source_count, int(waveform.shape[-1]), sr,
+        )
+        return ({"waveform": waveform, "sample_rate": int(sr)},)
 
 
 class MiniMaxH3ExistingVideoMaskedContext:
@@ -518,47 +946,37 @@ class MiniMaxH3ExistingVideoMaskedContext:
                 % (insert_frame, s, video_steps, s + video_steps, int(target_video.shape[2]))
             )
 
-        # Audio prefix: exact same physical interval, end-aligned to source end.
+        # Audio prefix: this node intentionally snaps `n` to a shared 24-fps /
+        # 40-Hz AV boundary, so the picture-duration PCM span is already an
+        # exact H3 audio grid. Route it through the shared strict encoder anyway
+        # so every repo-owned PCM -> H3 audio encode has the same invariant and
+        # no latent-level trim/pad fallback can hide an encoder contract change.
+        exact_audio_steps = n / FPS * AUDIO_HZ
+        expected_audio_steps = int(round(exact_audio_steps))
+        _grid_sr, _samples_per_latent, grid_samples = audio_grid_geometry(
+            audio_vae, expected_audio_steps
+        )
+        if _grid_sr != vae_sr:
+            raise RuntimeError(
+                "h3_masked_extension: audio VAE grid reports %d Hz but audio_sample_rate is %d"
+                % (_grid_sr, vae_sr)
+            )
         context_samples = int(round(n / FPS * vae_sr))
+        if context_samples != grid_samples:
+            raise RuntimeError(
+                "h3_masked_extension: shared AV boundary %d frames maps to %d picture samples "
+                "but %d H3-grid samples" % (n, context_samples, grid_samples)
+            )
         waveform = canonical_audio["waveform"]
-        if int(waveform.shape[-1]) < context_samples:
+        if int(waveform.shape[-1]) < grid_samples:
             raise ValueError(
                 "h3_masked_extension: source audio is shorter than the selected context"
             )
-        audio_tail = waveform[..., -context_samples:]
-        audio_prefix = audio_vae.encode(audio_tail.movedim(1, -1))
-        if getattr(audio_prefix, "ndim", 0) != 4:
-            raise ValueError(
-                "h3_masked_extension: audio VAE returned %s, expected [B,C,2,T]"
-                % (tuple(getattr(audio_prefix, "shape", ())),)
-            )
-        exact_audio_steps = n / FPS * AUDIO_HZ
-        expected_audio_steps = int(round(exact_audio_steps))
-        if abs(exact_audio_steps - expected_audio_steps) > 1e-9:
-            _LOG.warning(
-                "h3_masked_extension: %d-frame context ends between H3 audio "
-                "latent ticks (%.6f steps -> %d). 39 frames is recommended "
-                "for an exact AV boundary.",
-                n,
-                exact_audio_steps,
-                expected_audio_steps,
-            )
-        got_audio_steps = int(audio_prefix.shape[-1])
-        if got_audio_steps < expected_audio_steps:
-            raise RuntimeError(
-                "h3_masked_extension: %d-frame context needs %d audio latent "
-                "steps but the audio VAE produced only %d"
-                % (n, expected_audio_steps, got_audio_steps)
-            )
-        if got_audio_steps > expected_audio_steps:
-            _LOG.warning(
-                "h3_masked_extension: audio VAE produced %d steps for a %d-step "
-                "context; end-aligning and keeping the final %d",
-                got_audio_steps,
-                expected_audio_steps,
-                expected_audio_steps,
-            )
-            audio_prefix = audio_prefix[..., -expected_audio_steps:]
+        audio_tail = waveform[..., -grid_samples:]
+        audio_prefix, _audio_grid_diag = encode_exact_audio_grid(
+            audio_vae, audio_tail, expected_audio_steps,
+            "h3_masked_extension: source context tail",
+        )
         audio_steps = expected_audio_steps
 
         exact_a_start = insert_frame / FPS * AUDIO_HZ
@@ -1127,6 +1545,116 @@ class MiniMaxH3GeneratedAVMaskedContext:
             n, video_steps, audio_steps, max(0, min(int(audio_feather_ticks), audio_steps)), target_frames,
         )
         return (out, n)
+
+class MiniMaxH3FanRecoveredContext:
+    """Map a recovered starter tail onto the extension's exact smear clock.
+
+    The repaired low-resolution smear is used for the pass-2 init. The node
+    also returns the seam-nearest native-resolution guide frames and their
+    exact target offset, avoiding a second full-resolution smear/decode path.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "target_images": ("IMAGE", {
+                    "tooltip": "Full smeared extension baseline on the de-rope clock."
+                }),
+                "source_context_images": ("IMAGE", {
+                    "tooltip": "Previous clip's final recovered real-time context frames."
+                }),
+                "hold_map": ("STRING", {
+                    "forceInput": True,
+                    "tooltip": "hold_map_used from the SAME H3 Time Smear node."
+                }),
+                "context_frames": ("INT", {
+                    "default": 39, "min": 1, "max": 9999,
+                    "tooltip": "Real-time starter frames to fan onto the smear clock."
+                }),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE", "INT")
+    RETURN_NAMES = ("images", "seam_guide_images", "seam_guide_start")
+    FUNCTION = "bridge"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Fan the previous clip's recovered tail with the exact hold map used by "
+        "the current H3 Time Smear. The repaired smear feeds the pass-2 init; "
+        "the seam-nearest native-resolution guide and its exact dynamic target "
+        "offset feed an interior H3 Motion Context guide."
+    )
+
+    def bridge(self, target_images, source_context_images, hold_map, context_frames=39):
+        if getattr(target_images, "ndim", 0) != 4 or int(target_images.shape[0]) < 1:
+            raise ValueError("h3_derope_context: target_images must be a non-empty IMAGE batch")
+        if getattr(source_context_images, "ndim", 0) != 4 or int(source_context_images.shape[0]) < 1:
+            raise ValueError("h3_derope_context: source_context_images must be a non-empty IMAGE batch")
+
+        holds = _parse_hold_map(hold_map)
+        n = max(1, int(context_frames))
+        if len(holds) < n:
+            raise ValueError(
+                "h3_derope_context: hold_map has %d frames but %d context frames were requested"
+                % (len(holds), n)
+            )
+        if int(source_context_images.shape[0]) < n:
+            raise ValueError(
+                "h3_derope_context: source context has %d frames but %d were requested"
+                % (int(source_context_images.shape[0]), n)
+            )
+
+        source_native = source_context_images[-n:]
+        context_holds = holds[:n]
+        fanned = sum(context_holds)
+        if fanned < n:
+            raise RuntimeError("h3_derope_context: fanned context unexpectedly shrank")
+        if fanned >= int(target_images.shape[0]):
+            raise ValueError(
+                "h3_derope_context: fanned prefix %d consumes the whole smeared target (%d)"
+                % (fanned, int(target_images.shape[0]))
+            )
+        # Build the index list only after bounding its length by the target.
+        expanded_indices = [
+            i for i, hold in enumerate(context_holds) for _ in range(hold)
+        ]
+
+        # The pass-2 guide is the LAST n frames of the fanned context at the
+        # source's native resolution. Construct only those n frames instead of
+        # materializing the whole fanned 2MP prefix.
+        guide_index = torch.tensor(
+            expanded_indices[-n:], dtype=torch.long, device=source_native.device
+        )
+        seam_guide = source_native.index_select(0, guide_index)
+        guide_start = fanned - n
+
+        # For the repaired smear/init, match the pass-1 target grid first, then
+        # fan the same exact source-index sequence.
+        source = source_native
+        target_h = int(target_images.shape[1])
+        target_w = int(target_images.shape[2])
+        source_h = int(source.shape[1])
+        source_w = int(source.shape[2])
+        if source_h != target_h or source_w != target_w:
+            source = _resize_images(source, target_w, target_h, "disabled")
+            _LOG.info(
+                "h3_derope_context: resized recovered context from %dx%d to %dx%d before fanning",
+                source_w, source_h, target_w, target_h,
+            )
+
+        full_index = torch.tensor(
+            expanded_indices, dtype=torch.long, device=source.device
+        )
+        prefix = source.index_select(0, full_index)
+        out = target_images.clone()
+        out[:fanned] = prefix.to(device=out.device, dtype=out.dtype)
+        _LOG.info(
+            "h3_derope_context: fanned recovered context %d real-time frames -> %d smeared frames; "
+            "guide uses final %d frames at target %d; repaired %d-frame smeared baseline",
+            n, fanned, n, guide_start, int(target_images.shape[0]),
+        )
+        return (out, seam_guide, guide_start)
 
 
 class MiniMaxH3StartMaskedContext:

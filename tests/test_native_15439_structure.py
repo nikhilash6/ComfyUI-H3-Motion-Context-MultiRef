@@ -16,7 +16,8 @@ def test_classic_path_has_no_old_core_patch_imports():
 
 
 def test_motion_context_emits_native_guide_shape():
-    assert '"resolved_frame_index": 0, "latent": enc' in NODES
+    assert '"resolved_frame_index": start, "latent": enc' in NODES
+    assert '"resolved_frame_index": start + i, "latent": enc' in NODES
     assert 'holder["audio_latent"] = audio_latent' in NODES
     assert 'conditioning[0][1].get("minimax_keyframes", [])' in NODES
     assert '"minimax_frame_count"' not in NODES

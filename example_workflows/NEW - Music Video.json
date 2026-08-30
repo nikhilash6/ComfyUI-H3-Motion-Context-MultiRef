@@ -1,8 +1,8 @@
 {
   "id": "76b5f713-5824-40ae-a2b7-f02ad62c256c",
   "revision": 1,
-  "last_node_id": 2507,
-  "last_link_id": 1467,
+  "last_node_id": 2509,
+  "last_link_id": 1489,
   "nodes": [
     {
       "id": 2,
@@ -47,7 +47,6 @@
           ]
         }
       ],
-      "title": "H3 TEXT ENCODER",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -62,7 +61,8 @@
         "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "type": "minimax",
         "device": "default"
-      }
+      },
+      "title": "Clip 1 - Load CLIP"
     },
     {
       "id": 4,
@@ -127,7 +127,6 @@
           ]
         }
       ],
-      "title": "H3 Audio VAE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -138,7 +137,8 @@
       ],
       "widgets_values_named": {
         "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
-      }
+      },
+      "title": "Clip 1 - Load VAE"
     },
     {
       "id": 5,
@@ -331,7 +331,6 @@
           ]
         }
       ],
-      "title": "CLIP 2 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -450,12 +449,12 @@
           "links": null
         }
       ],
-      "title": "Clip 2 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 2 - SamplerCustomAdvanced"
     },
     {
       "id": 301,
@@ -543,7 +542,6 @@
           ]
         }
       ],
-      "title": "CLIP 3 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -662,12 +660,12 @@
           "links": null
         }
       ],
-      "title": "Clip 3 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 3 - SamplerCustomAdvanced"
     },
     {
       "id": 401,
@@ -755,7 +753,6 @@
           ]
         }
       ],
-      "title": "CLIP 4 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -874,12 +871,12 @@
           "links": null
         }
       ],
-      "title": "Clip 4 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 4 - SamplerCustomAdvanced"
     },
     {
       "id": 501,
@@ -967,7 +964,6 @@
           ]
         }
       ],
-      "title": "CLIP 5 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -1086,12 +1082,12 @@
           "links": null
         }
       ],
-      "title": "Clip 5 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 5 - SamplerCustomAdvanced"
     },
     {
       "id": 601,
@@ -1179,7 +1175,6 @@
           ]
         }
       ],
-      "title": "CLIP 6 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -1298,12 +1293,12 @@
           "links": null
         }
       ],
-      "title": "Clip 6 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 6 - SamplerCustomAdvanced"
     },
     {
       "id": 701,
@@ -1391,7 +1386,6 @@
           ]
         }
       ],
-      "title": "CLIP 7 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -1548,12 +1542,12 @@
           "links": null
         }
       ],
-      "title": "Clip 7 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 7 - SamplerCustomAdvanced"
     },
     {
       "id": 1001,
@@ -1641,7 +1635,6 @@
           ]
         }
       ],
-      "title": "CLIP 8 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -1798,12 +1791,12 @@
           "links": null
         }
       ],
-      "title": "Clip 8 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 8 - SamplerCustomAdvanced"
     },
     {
       "id": 1101,
@@ -1891,7 +1884,6 @@
           ]
         }
       ],
-      "title": "CLIP 9 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -2048,12 +2040,12 @@
           "links": null
         }
       ],
-      "title": "Clip 9 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 9 - SamplerCustomAdvanced"
     },
     {
       "id": 1201,
@@ -2141,7 +2133,6 @@
           ]
         }
       ],
-      "title": "CLIP 10 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -2260,12 +2251,12 @@
           "links": null
         }
       ],
-      "title": "Clip 10 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 10 - SamplerCustomAdvanced"
     },
     {
       "id": 1301,
@@ -2353,7 +2344,6 @@
           ]
         }
       ],
-      "title": "CLIP 11 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -2510,12 +2500,12 @@
           "links": null
         }
       ],
-      "title": "Clip 11 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 11 - SamplerCustomAdvanced"
     },
     {
       "id": 1401,
@@ -2603,7 +2593,6 @@
           ]
         }
       ],
-      "title": "CLIP 12 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -2760,12 +2749,12 @@
           "links": null
         }
       ],
-      "title": "Clip 12 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 12 - SamplerCustomAdvanced"
     },
     {
       "id": 1501,
@@ -2853,7 +2842,6 @@
           ]
         }
       ],
-      "title": "CLIP 13 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -3010,12 +2998,12 @@
           "links": null
         }
       ],
-      "title": "Clip 13 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 13 - SamplerCustomAdvanced"
     },
     {
       "id": 1601,
@@ -3103,7 +3091,6 @@
           ]
         }
       ],
-      "title": "CLIP 14 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -3260,12 +3247,12 @@
           "links": null
         }
       ],
-      "title": "Clip 14 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 14 - SamplerCustomAdvanced"
     },
     {
       "id": 1701,
@@ -3353,7 +3340,6 @@
           ]
         }
       ],
-      "title": "CLIP 15 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -3510,12 +3496,12 @@
           "links": null
         }
       ],
-      "title": "Clip 15 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 15 - SamplerCustomAdvanced"
     },
     {
       "id": 102,
@@ -3586,7 +3572,6 @@
           "links": null
         }
       ],
-      "title": "H3 VALID FRAME LENGTH (17k+5)",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -3663,7 +3648,6 @@
           ]
         }
       ],
-      "title": "H3 Video VAE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -3674,7 +3658,8 @@
       ],
       "widgets_values_named": {
         "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
-      }
+      },
+      "title": "Clip 1 - Load VAE"
     },
     {
       "id": 1740,
@@ -3723,7 +3708,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 3",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -3783,7 +3767,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 4",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -3843,7 +3826,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 5",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -3903,7 +3885,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 6",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -3963,7 +3944,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 7",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4023,7 +4003,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 8",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4083,7 +4062,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 9",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4143,7 +4121,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 10",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4203,7 +4180,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 11",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4263,7 +4239,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 12",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4323,7 +4298,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 13",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4383,7 +4357,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 14",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4443,7 +4416,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 15",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4503,7 +4475,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 2",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4563,7 +4534,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 1",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -4600,7 +4570,6 @@
           ]
         }
       ],
-      "title": "H3 REF2VA MODEL — REQUIRED",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -4613,7 +4582,8 @@
       "widgets_values_named": {
         "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
         "weight_dtype": "default"
-      }
+      },
+      "title": "Clip 1 - Load Diffusion Model"
     },
     {
       "id": 210,
@@ -4823,7 +4793,6 @@
           ]
         }
       ],
-      "title": "MASTER SONG — LOAD AUDIO",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -4975,7 +4944,6 @@
           ]
         }
       ],
-      "title": "CLIP 2 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -4996,7 +4964,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 2 - MiniMax H3 Reference to Video"
     },
     {
       "id": 300,
@@ -5132,7 +5101,6 @@
           ]
         }
       ],
-      "title": "CLIP 3 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5153,7 +5121,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 3 - MiniMax H3 Reference to Video"
     },
     {
       "id": 600,
@@ -5289,7 +5258,6 @@
           ]
         }
       ],
-      "title": "CLIP 6 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5310,7 +5278,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 6 - MiniMax H3 Reference to Video"
     },
     {
       "id": 700,
@@ -5446,7 +5415,6 @@
           ]
         }
       ],
-      "title": "CLIP 7 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5467,7 +5435,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 7 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1000,
@@ -5603,7 +5572,6 @@
           ]
         }
       ],
-      "title": "CLIP 8 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5624,7 +5592,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 8 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1100,
@@ -5760,7 +5729,6 @@
           ]
         }
       ],
-      "title": "CLIP 9 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5781,7 +5749,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 9 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1200,
@@ -5917,7 +5886,6 @@
           ]
         }
       ],
-      "title": "CLIP 10 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -5938,7 +5906,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 10 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1300,
@@ -6074,7 +6043,6 @@
           ]
         }
       ],
-      "title": "CLIP 11 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6095,7 +6063,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 11 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1400,
@@ -6231,7 +6200,6 @@
           ]
         }
       ],
-      "title": "CLIP 12 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6252,7 +6220,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 12 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1500,
@@ -6388,7 +6357,6 @@
           ]
         }
       ],
-      "title": "CLIP 13 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6409,7 +6377,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 13 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1600,
@@ -6545,7 +6514,6 @@
           ]
         }
       ],
-      "title": "CLIP 14 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6566,7 +6534,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 14 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1700,
@@ -6702,7 +6671,6 @@
           ]
         }
       ],
-      "title": "CLIP 15 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6723,7 +6691,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 15 - MiniMax H3 Reference to Video"
     },
     {
       "id": 120,
@@ -6973,7 +6942,6 @@
           ]
         }
       ],
-      "title": "CLIP 4 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -6994,7 +6962,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 4 - MiniMax H3 Reference to Video"
     },
     {
       "id": 500,
@@ -7130,7 +7099,6 @@
           ]
         }
       ],
-      "title": "CLIP 5 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -7151,7 +7119,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 5 - MiniMax H3 Reference to Video"
     },
     {
       "id": 510,
@@ -7363,7 +7332,6 @@
           ]
         }
       ],
-      "title": "CLIP 16 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -7384,7 +7352,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 16 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1801,
@@ -7472,7 +7441,6 @@
           ]
         }
       ],
-      "title": "CLIP 16 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -7629,12 +7597,12 @@
           "links": null
         }
       ],
-      "title": "Clip 16 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 16 - SamplerCustomAdvanced"
     },
     {
       "id": 2250,
@@ -7683,7 +7651,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 16",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -7830,7 +7797,6 @@
           ]
         }
       ],
-      "title": "CLIP 17 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -7851,7 +7817,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 17 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1901,
@@ -7939,7 +7906,6 @@
           ]
         }
       ],
-      "title": "CLIP 17 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -8096,12 +8062,12 @@
           "links": null
         }
       ],
-      "title": "Clip 17 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 17 - SamplerCustomAdvanced"
     },
     {
       "id": 2251,
@@ -8150,7 +8116,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 17",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -8297,7 +8262,6 @@
           ]
         }
       ],
-      "title": "CLIP 18 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -8318,7 +8282,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 18 - MiniMax H3 Reference to Video"
     },
     {
       "id": 2001,
@@ -8406,7 +8371,6 @@
           ]
         }
       ],
-      "title": "CLIP 18 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -8563,12 +8527,12 @@
           "links": null
         }
       ],
-      "title": "Clip 18 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 18 - SamplerCustomAdvanced"
     },
     {
       "id": 2252,
@@ -8617,7 +8581,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 18",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -8764,7 +8727,6 @@
           ]
         }
       ],
-      "title": "CLIP 19 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -8785,7 +8747,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 19 - MiniMax H3 Reference to Video"
     },
     {
       "id": 2101,
@@ -8873,7 +8836,6 @@
           ]
         }
       ],
-      "title": "CLIP 19 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -9030,12 +8992,12 @@
           "links": null
         }
       ],
-      "title": "Clip 19 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 19 - SamplerCustomAdvanced"
     },
     {
       "id": 2253,
@@ -9084,7 +9046,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 19",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -9231,7 +9192,6 @@
           ]
         }
       ],
-      "title": "CLIP 20 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -9252,7 +9212,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 20 - MiniMax H3 Reference to Video"
     },
     {
       "id": 2201,
@@ -9340,7 +9301,6 @@
           ]
         }
       ],
-      "title": "CLIP 20 — LIVE PREVIOUS VIDEO LATENT TAIL + MASTER SONG / MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -9496,12 +9456,12 @@
           "links": null
         }
       ],
-      "title": "Clip 20 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 20 - SamplerCustomAdvanced"
     },
     {
       "id": 2254,
@@ -9550,7 +9510,6 @@
           "links": null
         }
       ],
-      "title": "SONG START — Clip 20",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -9598,7 +9557,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 1 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -9648,10 +9606,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1469
+          ]
         }
       ],
-      "title": "Clip 1 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -9690,7 +9649,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 1 - VHS Video Combine"
     },
     {
       "id": 2294,
@@ -9727,7 +9687,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 2 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -9777,10 +9736,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1470
+          ]
         }
       ],
-      "title": "Clip 2 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -9819,7 +9779,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 2 - VHS Video Combine"
     },
     {
       "id": 2297,
@@ -9856,7 +9817,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 3 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -9906,10 +9866,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1471
+          ]
         }
       ],
-      "title": "Clip 3 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -9948,7 +9909,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 3 - VHS Video Combine"
     },
     {
       "id": 2300,
@@ -9985,7 +9947,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 4 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10035,10 +9996,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1472
+          ]
         }
       ],
-      "title": "Clip 4 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10077,7 +10039,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 4 - VHS Video Combine"
     },
     {
       "id": 2303,
@@ -10114,7 +10077,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 5 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10164,10 +10126,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1473
+          ]
         }
       ],
-      "title": "Clip 5 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10206,7 +10169,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 5 - VHS Video Combine"
     },
     {
       "id": 2306,
@@ -10243,7 +10207,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 6 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10293,10 +10256,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1474
+          ]
         }
       ],
-      "title": "Clip 6 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10335,7 +10299,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 6 - VHS Video Combine"
     },
     {
       "id": 2309,
@@ -10372,7 +10337,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 7 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10422,10 +10386,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1475
+          ]
         }
       ],
-      "title": "Clip 7 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10464,7 +10429,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 7 - VHS Video Combine"
     },
     {
       "id": 2312,
@@ -10501,7 +10467,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 8 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10551,10 +10516,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1476
+          ]
         }
       ],
-      "title": "Clip 8 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10593,7 +10559,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 8 - VHS Video Combine"
     },
     {
       "id": 2315,
@@ -10630,7 +10597,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 9 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10680,10 +10646,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1477
+          ]
         }
       ],
-      "title": "Clip 9 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10722,7 +10689,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 9 - VHS Video Combine"
     },
     {
       "id": 2318,
@@ -10759,7 +10727,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 10 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10809,10 +10776,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1478
+          ]
         }
       ],
-      "title": "Clip 10 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10851,7 +10819,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 10 - VHS Video Combine"
     },
     {
       "id": 2321,
@@ -10888,7 +10857,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 11 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -10938,10 +10906,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1479
+          ]
         }
       ],
-      "title": "Clip 11 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -10980,7 +10949,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 11 - VHS Video Combine"
     },
     {
       "id": 2324,
@@ -11017,7 +10987,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 12 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11067,10 +11036,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1480
+          ]
         }
       ],
-      "title": "Clip 12 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11109,7 +11079,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 12 - VHS Video Combine"
     },
     {
       "id": 2327,
@@ -11146,7 +11117,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 13 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11196,10 +11166,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1481
+          ]
         }
       ],
-      "title": "Clip 13 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11238,7 +11209,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 13 - VHS Video Combine"
     },
     {
       "id": 2330,
@@ -11275,7 +11247,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 14 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11325,10 +11296,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1482
+          ]
         }
       ],
-      "title": "Clip 14 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11367,7 +11339,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 14 - VHS Video Combine"
     },
     {
       "id": 2333,
@@ -11404,7 +11377,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 15 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11454,10 +11426,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1483
+          ]
         }
       ],
-      "title": "Clip 15 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11496,7 +11469,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 15 - VHS Video Combine"
     },
     {
       "id": 2336,
@@ -11533,7 +11507,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 16 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11583,10 +11556,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1484
+          ]
         }
       ],
-      "title": "Clip 16 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11625,7 +11599,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 16 - VHS Video Combine"
     },
     {
       "id": 2339,
@@ -11662,7 +11637,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 17 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11712,10 +11686,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1485
+          ]
         }
       ],
-      "title": "Clip 17 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11754,7 +11729,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 17 - VHS Video Combine"
     },
     {
       "id": 2342,
@@ -11791,7 +11767,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 18 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11841,10 +11816,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1486
+          ]
         }
       ],
-      "title": "Clip 18 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -11883,7 +11859,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 18 - VHS Video Combine"
     },
     {
       "id": 2345,
@@ -11920,7 +11897,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 19 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -11970,10 +11946,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1487
+          ]
         }
       ],
-      "title": "Clip 19 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -12012,7 +11989,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 19 - VHS Video Combine"
     },
     {
       "id": 2348,
@@ -12049,7 +12027,6 @@
           ]
         }
       ],
-      "title": "PREVIEW — CLIP 20 — VIDEO DECODE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -12099,10 +12076,11 @@
         {
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": [
+            1488
+          ]
         }
       ],
-      "title": "Clip 20 — VHS Video Combine",
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "1.7.7",
@@ -12141,7 +12119,8 @@
           "paused": false,
           "params": {}
         }
-      }
+      },
+      "title": "Clip 20 - VHS Video Combine"
     },
     {
       "id": 973,
@@ -12186,7 +12165,6 @@
           ]
         }
       ],
-      "title": "Global KSamplerSelect",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -12225,7 +12203,6 @@
           ]
         }
       ],
-      "title": "Global Steps",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -12258,7 +12235,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "Context length guide",
       "properties": {
         "Node name for S&R": "Note"
       },
@@ -12295,7 +12271,6 @@
           ]
         }
       ],
-      "title": "GLOBAL VIDEO CONTEXT FRAMES",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -12336,7 +12311,6 @@
           ]
         }
       ],
-      "title": "GLOBAL VIDEO CROSSFADE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -12395,7 +12369,8 @@
       "widgets_values_named": {
         "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
         "strength_model": 1
-      }
+      },
+      "title": "Clip 1 - LoraLoaderModelOnly"
     },
     {
       "id": 1756,
@@ -12487,7 +12462,6 @@
           "links": null
         }
       ],
-      "title": "REFERENCE IMAGE 1 — OPTIONAL / CONNECTED TO ALL R2V",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -12550,7 +12524,6 @@
           "links": null
         }
       ],
-      "title": "REFERENCE IMAGE 2 — OPTIONAL / CONNECTED TO ALL R2V",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -12622,7 +12595,6 @@
           ]
         }
       ],
-      "title": "Global Scheduler Select",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -12773,7 +12745,6 @@
           ]
         }
       ],
-      "title": "CLIP 1 — MiniMax H3 Reference to Video",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -12794,7 +12765,8 @@
         "ref_image_size": "match"
       },
       "color": "#346434",
-      "bgcolor": "rgba(24,24,27,.9)"
+      "bgcolor": "rgba(24,24,27,.9)",
+      "title": "Clip 1 - MiniMax H3 Reference to Video"
     },
     {
       "id": 1755,
@@ -12874,7 +12846,6 @@
           ]
         }
       ],
-      "title": "CLIP 1 — MASTER SONG LATENT / AUDIO MASK 0",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "4b484a3e1c7ddc045771042dcdb8b60529f127ff",
@@ -12950,12 +12921,12 @@
           "links": null
         }
       ],
-      "title": "Clip 1 Sampler",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
         "Node name for S&R": "SamplerCustomAdvanced"
-      }
+      },
+      "title": "Clip 1 - SamplerCustomAdvanced"
     },
     {
       "id": 2501,
@@ -12976,9 +12947,7 @@
         {
           "name": "active_clips",
           "type": "INT",
-          "links": [
-            1401
-          ]
+          "links": null
         },
         {
           "name": "preview_mode",
@@ -12986,7 +12955,6 @@
           "links": null
         }
       ],
-      "title": "H3 MUSIC VIDEO CONTROLLER — ACTIVE CLIPS / PREVIEWS",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "live-music-video",
@@ -13171,6 +13139,12 @@
             "name": "video_overlap_frames"
           },
           "link": 1403
+        },
+        {
+          "name": "preview_gate",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1489
         }
       ],
       "outputs": [
@@ -13182,14 +13156,13 @@
           ]
         }
       ],
-      "title": "FINAL MUSIC VIDEO — DIRECT STREAM TO VHS",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "update6-direct-stream-final",
         "Node name for S&R": "MiniMaxH3StreamLiveMusicVideoToVHS"
       },
       "widgets_values": [
-        1,
+        20,
         39,
         39,
         "video/h3_music_video",
@@ -13200,7 +13173,7 @@
         true
       ],
       "widgets_values_named": {
-        "active_clips": 1,
+        "input_count": 20,
         "context_frames": 39,
         "video_overlap_frames": 39,
         "filename_prefix": "video/h3_music_video",
@@ -13229,7 +13202,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "MP RESOLUTION GUIDE",
       "properties": {},
       "widgets_values": [
         "| megapixels | Aspect | Output (multiple=32) |            |        |\n|       0.2  |  16:9  |  608 x 352\n|       0.3  |  16:9  |  736 x 416\n|       0.4  |  16:9  |  864 x 480\n|       0.5  |  16:9  |  960 x 544\n|       0.6  |  16:9  | 1056 x 608\n|       0.7  |  16:9  | 1152 x 640\n|       0.8  |  16:9  | 1216 x 672\n|       0.9  |  16:9  | 1280 x 736\n|       0.98 |  16:9  | 1344 x 768\n|       1.0  |  16:9  | 1376 x 768\n|       1.2  |  16:9  | 1504 x 832\n|       1.5  |  16:9  | 1664 x 928\n|       1.8  |  16:9  | 1824 x 1024\n|       2.0  |  16:9  | 1920 x 1088"
@@ -13268,7 +13240,6 @@
           "links": null
         }
       ],
-      "title": "Frame Count",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -13325,7 +13296,6 @@
           "links": null
         }
       ],
-      "title": "REFERENCE IMAGE 3 — OPTIONAL / CONNECTED TO ALL R2V / BYPASSED BY DEFAULT",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -13388,7 +13358,6 @@
           "links": null
         }
       ],
-      "title": "REFERENCE IMAGE 4 — OPTIONAL / CONNECTED TO ALL R2V / BYPASSED BY DEFAULT",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -13419,7 +13388,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "STEP 1 — CHARACTER REFERENCES",
       "properties": {},
       "widgets_values": [
         "Select reference images as needed.\n\nReference Image 1 can be a clean face / identity portrait.\nReference Image 2 can be a full-body / wardrobe reference of the same performer.\nReference Images 3 and 4 are extra optional slots and are BYPASSED by default.\n\nAll four Load Image nodes are wired to every Ref2VA clip. Unbypass Reference Image 3/4 when you want to use those additional slots."
@@ -13503,7 +13471,6 @@
           "links": null
         }
       ],
-      "title": "SONG STEP SECONDS = (frames - context) / 24",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.31.0",
@@ -13590,7 +13557,6 @@
           "links": null
         }
       ],
-      "title": "EFFECTIVE VIDEO CONTEXT — H3 SAFE",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.33.0",
@@ -13627,7 +13593,6 @@
           ]
         }
       ],
-      "title": "GLOBAL CLIP DURATION — seconds",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.30.0",
@@ -13660,7 +13625,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "Director Prompt for your LLM — MASTER-SONG MASKED AV",
       "properties": {
         "Node name for S&R": "Note"
       },
@@ -13689,7 +13653,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "HOW THIS LIVE MUSIC-VIDEO WORKFLOW WORKS",
       "properties": {},
       "widgets_values": [
         "MUSIC VIDEO\n\nUse H3 MUSIC VIDEO CONTROLLER to choose the number of active clips and preview mode.\n\nThe included six-clip setup recreates the bundled example using the two reference images and master song in example_workflows/assets/. Copy those files into ComfyUI's input folder before running it.\n\nReplace the song, references, and clip prompts with your own when starting a new project. Reference Images 3 and 4 are optional and bypassed by default.\n\nThe original master song is used as the final soundtrack."
@@ -13716,7 +13679,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "STEP 2 — MASTER SONG TIMELINE / LATENT AUDIO",
       "properties": {},
       "widgets_values": [
         "Load the original song once.\n\nEach H3 Song Audio + Masked Video Context node computes its own exact song interval from the shared clip timeline, encodes that interval into the target H3 audio latent, and protects the full audio stream with mask = 0.\n\nClip previews use that exact original-song slice directly. The final output uses the original master song waveform."
@@ -13743,7 +13705,6 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "title": "START HERE — MUSIC VIDEO / LIP-SYNC",
       "properties": {
         "Node name for S&R": "Note"
       },
@@ -13778,7 +13739,6 @@
         }
       ],
       "outputs": [],
-      "title": "FINAL — EXECUTION SINK (PREVIEW ORDER)",
       "properties": {
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "update6-preview-order-fix",
@@ -13787,6 +13747,205 @@
       "widgets_values": [],
       "color": "#193d36",
       "bgcolor": "rgba(16,49,42,.95)"
+    },
+    {
+      "id": 2508,
+      "type": "PrimitiveInt",
+      "pos": [
+        -1715,
+        -980
+      ],
+      "size": [
+        220,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 193,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            1401,
+            1468
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.30.0",
+        "Node name for S&R": "PrimitiveInt",
+        "h3_music_param": "active_clips"
+      },
+      "widgets_values": [
+        6,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "value": 6,
+        "fixed": "fixed"
+      }
+    },
+    {
+      "id": 2509,
+      "type": "MiniMaxH3LastActiveVHSPreviewBarrier",
+      "pos": [
+        1375,
+        -1995
+      ],
+      "size": [
+        470,
+        520
+      ],
+      "flags": {},
+      "order": 194,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "active_clips",
+          "shape": 7,
+          "type": "INT",
+          "link": 1468
+        },
+        {
+          "name": "preview_1",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1469
+        },
+        {
+          "name": "preview_2",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1470
+        },
+        {
+          "name": "preview_3",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1471
+        },
+        {
+          "name": "preview_4",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1472
+        },
+        {
+          "name": "preview_5",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1473
+        },
+        {
+          "name": "preview_6",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1474
+        },
+        {
+          "name": "preview_7",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1475
+        },
+        {
+          "name": "preview_8",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1476
+        },
+        {
+          "name": "preview_9",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1477
+        },
+        {
+          "name": "preview_10",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1478
+        },
+        {
+          "name": "preview_11",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1479
+        },
+        {
+          "name": "preview_12",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1480
+        },
+        {
+          "name": "preview_13",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1481
+        },
+        {
+          "name": "preview_14",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1482
+        },
+        {
+          "name": "preview_15",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1483
+        },
+        {
+          "name": "preview_16",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1484
+        },
+        {
+          "name": "preview_17",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1485
+        },
+        {
+          "name": "preview_18",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1486
+        },
+        {
+          "name": "preview_19",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1487
+        },
+        {
+          "name": "preview_20",
+          "shape": 7,
+          "type": "VHS_FILENAMES",
+          "link": 1488
+        }
+      ],
+      "outputs": [
+        {
+          "name": "preview_gate",
+          "type": "VHS_FILENAMES",
+          "links": [
+            1489
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3LastActiveVHSPreviewBarrier"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {}
     }
   ],
   "links": [
@@ -18032,7 +18191,7 @@
     ],
     [
       1401,
-      2501,
+      2508,
       0,
       2500,
       22,
@@ -18548,6 +18707,182 @@
       0,
       2507,
       0,
+      "VHS_FILENAMES"
+    ],
+    [
+      1469,
+      2293,
+      0,
+      2509,
+      1,
+      "VHS_FILENAMES"
+    ],
+    [
+      1470,
+      2296,
+      0,
+      2509,
+      2,
+      "VHS_FILENAMES"
+    ],
+    [
+      1471,
+      2299,
+      0,
+      2509,
+      3,
+      "VHS_FILENAMES"
+    ],
+    [
+      1472,
+      2302,
+      0,
+      2509,
+      4,
+      "VHS_FILENAMES"
+    ],
+    [
+      1473,
+      2305,
+      0,
+      2509,
+      5,
+      "VHS_FILENAMES"
+    ],
+    [
+      1474,
+      2308,
+      0,
+      2509,
+      6,
+      "VHS_FILENAMES"
+    ],
+    [
+      1475,
+      2311,
+      0,
+      2509,
+      7,
+      "VHS_FILENAMES"
+    ],
+    [
+      1476,
+      2314,
+      0,
+      2509,
+      8,
+      "VHS_FILENAMES"
+    ],
+    [
+      1477,
+      2317,
+      0,
+      2509,
+      9,
+      "VHS_FILENAMES"
+    ],
+    [
+      1478,
+      2320,
+      0,
+      2509,
+      10,
+      "VHS_FILENAMES"
+    ],
+    [
+      1479,
+      2323,
+      0,
+      2509,
+      11,
+      "VHS_FILENAMES"
+    ],
+    [
+      1480,
+      2326,
+      0,
+      2509,
+      12,
+      "VHS_FILENAMES"
+    ],
+    [
+      1481,
+      2329,
+      0,
+      2509,
+      13,
+      "VHS_FILENAMES"
+    ],
+    [
+      1482,
+      2332,
+      0,
+      2509,
+      14,
+      "VHS_FILENAMES"
+    ],
+    [
+      1483,
+      2335,
+      0,
+      2509,
+      15,
+      "VHS_FILENAMES"
+    ],
+    [
+      1484,
+      2338,
+      0,
+      2509,
+      16,
+      "VHS_FILENAMES"
+    ],
+    [
+      1485,
+      2341,
+      0,
+      2509,
+      17,
+      "VHS_FILENAMES"
+    ],
+    [
+      1486,
+      2344,
+      0,
+      2509,
+      18,
+      "VHS_FILENAMES"
+    ],
+    [
+      1487,
+      2347,
+      0,
+      2509,
+      19,
+      "VHS_FILENAMES"
+    ],
+    [
+      1488,
+      2350,
+      0,
+      2509,
+      20,
+      "VHS_FILENAMES"
+    ],
+    [
+      1468,
+      2508,
+      0,
+      2509,
+      0,
+      "INT"
+    ],
+    [
+      1489,
+      2509,
+      0,
+      2500,
+      25,
       "VHS_FILENAMES"
     ]
   ],

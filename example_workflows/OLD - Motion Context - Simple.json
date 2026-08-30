@@ -1063,7 +1063,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "                    For each clip! --->\n\nGlobal clip duration = duration of each clip, not the total length of the stitched clips.\n\nFinal stitched length is slightly shorter than clip duration times number of clips because every continuation\nuses a 39-frame (1.625s) video overlap by default; audio overlap is trimmed."
+        "                    For each clip! --->\n\nGlobal clip duration = duration of each clip, not the total length of the stitched clips.\n\nFinal stitched length is slightly shorter than clip duration times number of clips because every continuation\nuses a 39-frame (1.625s) video overlap by default; audio overlap is removed, and each delivered audio segment is time-conformed to the exact 24-fps picture boundary."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -2041,7 +2041,7 @@
           ]
         }
       ],
-      "title": "CLIP 3 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 3 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",
@@ -2800,7 +2800,7 @@
           ]
         }
       ],
-      "title": "CLIP 4 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 4 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",
@@ -3575,7 +3575,7 @@
           ]
         }
       ],
-      "title": "CLIP 5 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 5 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",
@@ -4348,7 +4348,7 @@
           ]
         }
       ],
-      "title": "CLIP 6 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 6 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",
@@ -4934,7 +4934,7 @@
           "links": null
         }
       ],
-      "title": "Clip 1 — match audio tail only",
+      "title": "Clip 1 — conform audio tail to video timeline",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",
@@ -5176,7 +5176,7 @@
           ]
         }
       ],
-      "title": "CLIP 2 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 2 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "aux_id": "NikoDemon80/ComfyUI-H3-Motion-Context",
         "Node name for S&R": "MiniMaxH3MotionContextTrim",

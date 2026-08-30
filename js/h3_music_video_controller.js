@@ -77,6 +77,30 @@ function readState(controller) {
     };
 }
 
+function parameterNodes(graph) {
+    return (graph?._nodes ?? []).filter(
+        (node) => String(node?.properties?.h3_music_param ?? "") === "active_clips"
+    );
+}
+
+function syncExecutionParameters(graph, state, { strict = false } = {}) {
+    const params = parameterNodes(graph);
+    const errors = [];
+    if (params.length !== 1) {
+        errors.push(`expected exactly one cache-isolated Music Video parameter 'active_clips', found ${params.length}`);
+    } else {
+        const w = widget(params[0], "value", 0);
+        if (!w) {
+            errors.push("Music Video active_clips parameter is missing widget 'value'");
+        } else if (Number(w.value) !== Number(state.active)) {
+            w.value = state.active;
+            params[0].setDirtyCanvas?.(true, true);
+        }
+    }
+    if (strict && errors.length) throw new Error("H3 Music Video Controller: " + errors.join("; "));
+    return errors;
+}
+
 function desiredState(meta, state) {
     const role = String(meta.role ?? "");
     const index = Number(meta.index ?? 0);
@@ -196,13 +220,14 @@ function applyController(controller, { strict = false } = {}) {
     reconciling = true;
     try {
         const state = readState(controller);
+        const parameterErrors = syncExecutionParameters(graph, state, { strict });
         const managed = [];
         for (const group of groups(graph)) {
             const meta = controlMeta(group);
             if (!meta) continue;
             managed.push({ group, meta, nodes: memberNodes(group, graph) });
         }
-        const errors = validateManagedGroups(graph, managed, controller);
+        const errors = [...parameterErrors, ...validateManagedGroups(graph, managed, controller)];
         controller._h3ControllerErrors = errors;
         if (errors.length) {
             console.error("H3 Music Video Controller configuration error:\n" + errors.join("\n"));

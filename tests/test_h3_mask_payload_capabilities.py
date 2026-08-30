@@ -10,7 +10,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def install_fake(native=False, direct_payload=False):
+def install_fake(native=False, direct_payload=False, merged_native=False):
     for name in list(sys.modules):
         if name == "payloadpkg" or name.startswith("payloadpkg.") or name == "comfy" or name.startswith("comfy."):
             sys.modules.pop(name, None)
@@ -38,11 +38,26 @@ def install_fake(native=False, direct_payload=False):
                     "denoise_mask": object(),
                     "audio_denoise_mask": object(),
                 }
+        elif merged_native:
+            def extra_conds(self, **kwargs):
+                denoise_mask = kwargs.get("denoise_mask")
+                if denoise_mask is not None:
+                    return self._denoise_mask_conds(denoise_mask, kwargs.get("latent_shapes"))
+                return {}
         else:
             # Deliberately contains neither native output-key string. This
             # simulates a future refactor that delegates extraction elsewhere.
             def extra_conds(self, **kwargs):
                 return {}
+
+    if merged_native:
+        MiniMaxH3._pool_masks_to_token_grid = lambda self, masks: masks
+        MiniMaxH3._token_grid_masks = lambda self, mask, shapes: mask
+        MiniMaxH3._denoise_mask_values = lambda self, mask, shapes: {}
+        MiniMaxH3._denoise_mask_conds = lambda self, mask, shapes: {}
+        def scale_latent_inpaint(self, sigma, noise, latent_image, x=None, denoise_mask=None, **kwargs):
+            return latent_image
+        MiniMaxH3.scale_latent_inpaint = scale_latent_inpaint
 
     if native:
         def process_timestep(self, timestep, x=None, denoise_mask=None, audio_denoise_mask=None, **kwargs):
@@ -101,3 +116,15 @@ def test_legacy_payload_gets_lazy_wrapper():
     assert module.ensure_av_mask_payload_compat()
     assert cls.extra_conds is not before
     assert module.capability_status()["wrapper_present"]
+
+
+def test_current_merged_native_payload_is_noop():
+    module, cls = install_fake(merged_native=True)
+    before = cls.extra_conds
+    status = module.capability_status()
+    assert status["native_av_mask_payload"]
+    assert status["native_h3_mask_hooks"]
+    assert not status["native_payload_direct"]
+    assert module.ensure_av_mask_payload_compat()
+    assert cls.extra_conds is before
+    assert not module.capability_status()["wrapper_present"]

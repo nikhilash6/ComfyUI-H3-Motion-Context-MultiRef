@@ -279,7 +279,7 @@ The current `NEW - Music Video.json` restores the repository's reproducible six-
 - Protected AV context snaps to shared H3 video/audio boundaries `39 / 90 / 141 / 192 / ...`, rather than accepting video-only H3 runs that end between 40 Hz audio ticks.
 - Final decoded-audio stitching removes duplicated context using **absolute timeline sample boundaries**. This avoids one-sample seam drift at rates such as 44.1 kHz.
 - When H3 audio decode is only a few hundred samples short of the exact frame-derived clip duration, the whole decoded clip is time-conformed by the tiny required ratio **before** the duplicated context is cut. Normal grid undershoot no longer inserts a zero/silence tail at every extension.
-- The public workflow now ends at `H3 Stream Final AV Extension to VHS`. It decodes one generated clip at a time, keeps only the effective visual seam tail, streams completed frames directly into VHS, and assembles exact AV audio without allocating the old full final RGB movie tensor.
+- The public workflow now ends at `H3 Stream AV Extensions to VHS`. It decodes one generated clip at a time, keeps only the effective visual seam tail, streams completed frames directly into VHS, and assembles exact AV audio without allocating the old full final RGB movie tensor.
 
 ### Music Video
 
@@ -316,6 +316,8 @@ Update-5 disk-checkpoint long-form nodes are no longer registered in Update 6. S
 
 **Contributed by Reithan in [PR #3](https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef/pull/3).**
 
+Merged into `main` on **2026-08-30** after maintainer servicing and validation.
+
 Update 7 adds **arbitrary-position latent inserts**, **hard-preserved masked keyframes**, and H3-aware AV noise-mask utilities.
 
 Main changes:
@@ -327,3 +329,239 @@ Main changes:
 - A non-multiple-of-17 `insert_frame` is snapped **down** to the nearest multiple of 17 with a warning; all other new failure modes raise with exact numeric accounting.
 
 Merge-preparation servicing retained Reithan's feature attribution while adding safe existing-mask composition for hard keyframes, explicit overlap rejection, documentation/tooltips cleanup, and regression-test repairs.
+
+---
+
+## Update 8 — work in progress — Step 1: Fractional V2V denoise — 2026-08-30
+
+Step 1 adds `H3V2VGranularFractionalDenoise` (`H3 V2V Granular Fractional Denoise`), moving fractional V2V strength onto H3's per-stream denoise-mask path. "Granular" denotes the continuous `0..1` preserve-to-generate mask levels used instead of binary masking; "Fractional Denoise" describes their V2V effect. Near-1 mask precision compatibility is lazy and capability-probed: importing the repository does not patch ComfyUI, and executing the node patches only precision behaviors the live H3 core still lacks.
+
+### Source-audio alignment correction
+
+The first Step-1 build carried a defensive fallback that appended one zero **latent** audio step when the source encode was exactly one H3 audio tick shorter than the target. Deeper tracing showed that the latent shortfall was downstream of a more fundamental preprocessing mismatch.
+
+Current ComfyUI's generic `VAE.encode()` center-crops every non-aligned input dimension down to its VAE downscale multiple before calling the model-specific encoder. For the H3 audio VAE that multiple is 800 PCM samples (25 ms at 32 kHz). The H3 audio encoder itself is designed to right-pad PCM upward to that 800-sample boundary, while the H3 AV target allocates its audio stream by rounding video duration to the nearest 40 Hz audio tick. Feeding an exact picture-duration waveform through the generic wrapper can therefore both shorten the encode and move its start because the generic crop is centered.
+
+The V2V node now treats the **existing target H3 audio latent length as authoritative** and constructs an exact `target_audio_steps * samples_per_latent` PCM slice before encoding. This makes generic VAE center-cropping a no-op, keeps the selected source-audio origin aligned with the selected source-video origin, and naturally produces the required number of audio latents without post-encode latent padding or trimming. If the rounded 40 Hz grid extends fractionally past the final picture boundary, the node first uses real source-audio lookahead when available; only at an actual source endpoint can it add the small model-grid boundary pad in PCM space. A larger source-audio deficit remains an error.
+
+This also fixes cases where the old path happened to return the correct number of audio tokens but still center-shifted the encoded waveform by several milliseconds. Any residual mismatch after exact-grid preparation is now reported as an audio-VAE wrapper/encoder contract error rather than silently changing latent length.
+
+### Step 1c: repository-wide H3 audio-grid audit
+
+The same generic-VAE center-crop risk was audited across every repo-side H3 audio encode. Exact-grid preparation is now shared in `h3_audio_grid.py` and used by all affected paths:
+
+- **H3 V2V Granular Fractional Denoise**: start-aligned to the selected source-video interval; the target AV latent owns the audio-step count.
+- **H3 Song Audio + Masked Video Context**: start-aligned to `clip_start_seconds`; the public `clip_audio` output remains exact picture-duration audio while the latent encode uses the exact target 40 Hz grid. The older retry/over-encode/latent-crop workaround is removed.
+- **H3 Motion Context** when `context_audio` is VAE-encoded: the exact grid window is end/seam-aligned so continuation timing at the generated boundary does not move. Latent-to-latent audio context remains untouched.
+- **H3 Masked AV Bridge**: start-source tails are end/seam-aligned and end-source heads are start/seam-aligned. Non-shared H3 video runs such as 56/73 frames no longer let generic center-cropping shift either bridge seam.
+
+`H3 Existing Video Masked Context` was checked and is already mathematically safe because it snaps protected context to shared 24 fps / 40 Hz AV boundaries (`39 / 90 / 141 / 192 / ...`), where the PCM span is inherently an exact H3 audio-grid multiple. It now routes that exact span through the same strict shared encoder as a consistency/invariant check, without changing its timing behavior. `H3 Generated AV Masked Context`, latent-based Motion Context audio, decode/streaming nodes, and compatibility payload code do not audio-VAE encode source PCM and are therefore not affected by this issue.
+
+After exact-grid PCM preparation, post-encode audio latent padding/trimming is considered an error-hiding anti-pattern. The shared encoder helper requires the audio VAE to return exactly the requested number of latent steps; otherwise it reports a wrapper/encoder contract mismatch.
+
+### Step 1d: workaround-retirement audit
+
+After the exact-grid source correction, the repository was re-audited for older
+workarounds that had been compensating for PCM -> H3 audio length mismatches.
+The following compensations are intentionally **retired**:
+
+- V2V's one-audio-latent zero-pad fallback;
+- Song Audio's extra-lookahead/retry encode followed by latent cropping;
+- Masked AV Bridge post-encode head/tail latent trimming;
+- Existing Video Masked Context post-encode latent trimming;
+- stale latent-context "overhang compensation" bookkeeping that was no longer
+  consumed by any caller.
+
+All repo-owned PCM -> H3 audio encoding now goes through `h3_audio_grid.py` and
+must return exactly the requested target-cell count. A mismatch after exact-grid
+PCM preparation is an encoder/wrapper contract error, not something to repair by
+changing latent length.
+
+Several audio adjustments remain on purpose because they address **different
+contracts** and are not workarounds for the generic VAE center crop:
+
+- a partial PCM boundary cell may be zero-filled only at a genuine media edge
+  when the authoritative rounded 40-Hz target grid extends slightly beyond the
+  available picture-duration waveform;
+- Motion Context may reduce a requested audio-context window when the supplied
+  `context_audio` is genuinely shorter than the requested video context;
+- decoded generated audio may be time-conformed by a tiny ratio to the exact
+  24-fps picture duration before extension seams are cut;
+- final assembly helpers still trim/pad decoded/public waveforms to explicit mux
+  timeline lengths where required.
+
+Those retained paths operate before encoding at a real source boundary or after
+decoding/output assembly. They do not hide an H3 audio-VAE latent-count mismatch.
+
+### Step 1e: bundled-workflow workaround audit
+
+Every bundled workflow JSON was re-audited after the source-audio fix. No workflow
+contains a remaining `546 -> 547` latent-pad, post-encode latent crop, retry encode,
+or hard-coded 25-ms compensation. The audio operations that remain in the graphs
+serve different purposes:
+
+- the three legacy Motion Context workflows remove the duplicated protected audio
+  overlap before `AudioConcat`; their decoded audio tails are now time-conformed in
+  both directions to the exact frame-derived duration instead of assuming H3 audio
+  always rounds long;
+- `UTILITY - AV Bridge` keeps the decoded-bridge audio trim because the bridge output
+  intentionally contains protected source-audio head and tail spans; Step 1m wires
+  the trim start/duration to shared frame/FPS controls and computes them on H3's
+  40-Hz audio grid;
+- VHS `trim_to_audio` on temporary previews is only a mux/preview safeguard and does
+  not modify PCM before H3 AudioVAE encoding;
+- the music-video previews use each context node's exact picture-duration `clip_audio`,
+  while the final output uses the untouched master-song waveform;
+- generated-context paths copy H3 audio latents directly and never invoke the PCM
+  audio encoder.
+
+The audit also exposed a separate stale assumption in `MiniMaxH3MotionContextTrim`:
+H3's 40-Hz audio target is rounded to an integer cell count, so a valid 24-fps clip
+can decode a few milliseconds **shorter or longer** than the picture. The bundled
+362-frame legacy clips are a round-down case (603 audio cells = 15.075 s versus
+15.0833 s of picture), previously leaving an 8.33-ms undershoot per clip. The node
+now performs the same tiny bounded timebase conformance in either direction, so that
+drift cannot accumulate across `AudioConcat` chains.
+
+One path intentionally remains outside repo control: optional `ref_audio_*` inputs on
+stock `MiniMaxH3ReferenceToVideo` are encoded by ComfyUI core, not by this repository.
+Those optional full-audio references therefore still inherit ComfyUI's generic H3
+AudioVAE input-crop behavior until core fixes it. They are disabled/bypassed by
+default in the bundled legacy workflows and are not used for the master-song audio
+path.
+
+### Step 1f: workflow title normalization
+
+Current `NEW -` and `UTILITY -` workflows were normalized so ordinary nodes use their default ComfyUI titles. Stage prefixes remain only where they materially identify repeated generation stages. Graph topology, node IDs, links, and workflow settings were not changed as part of the title cleanup.
+
+### Step 1g: V2V latent motion transfer example workflow
+
+Added `NEW - V2V Latent Motion Transfer (with upscale and de-rope).json` to the bundled examples. The imported graph keeps the validated two-pass V2V/de-rope/upscale topology and settings unchanged: the original source anchors Pass 1, de-rope is generated only from the Pass-1 denoised/x0 result, the learned latent upscaler feeds the refinement stage, and exact recovery restores the original timeline.
+
+For readability, custom sentence-style node titles were removed. Only the stage-defining Pass 1 / Pass 2 model loaders, Ref2VA nodes, samplers, and the Pass-1 fractional-V2V node retain short prefixes in front of their default node titles.
+
+---
+
+
+### Step 1q: dynamic de-rope seam continuation
+
+Integrated the audited two-pass de-rope continuation path into Update 8. De-rope can fan the protected real-time seam into a variable-length smeared prefix, so a second-pass Motion Context guide cannot safely assume target frame 0.
+
+- `H3 Motion Context` now has an appended `target_start` control. `0` preserves existing head-context behavior and its trim count; a positive value places the native guide on the target pixel-frame timeline and returns `trim_frames=0`. Timeline audio, when used, moves with the same offset and continues to use Update 8's exact H3 40 Hz input-grid encoding.
+- Added `H3 Fan Recovered Context` (`MiniMaxH3FanRecoveredContext`). It consumes the exact `hold_map_used` from the same MAINodes `H3 Time Smear`, fans the recovered previous-clip tail onto that smear clock, repairs the low-resolution second-pass baseline, returns only the seam-nearest native-resolution guide frames, and calculates their dynamic interior start.
+- Added `NEW - 2MP De-Rope Continuation - Working Example.json`, using core `ImageFromBatch`, existing `H3 Motion Context Trim`, and `H3 Assemble Existing Video Extension` for the rest of the seam path. No new pass-2 denoise mask or custom final assembler is introduced.
+- This is distinct from Update 7's arbitrary `insert_frame` latent preservation: `target_start` places conditioning only, while `insert_frame` writes/protects source AV inside the latent and may require interior reassembly.
+
+### Step 1r: bundled de-rope continuation reference asset
+
+- Added `example_workflows/assets/derope_continuation_reference.png` and pointed `NEW - 2MP De-Rope Continuation - Working Example.json` at that exact bundled reference image.
+- Added a regression covering both the workflow filename and the asset SHA-256 so the example cannot silently drift to another reference.
+- Clarified `example_workflows/assets/LICENSE.md` so the older Update 4 CC0 dedication is not implicitly extended to this separately supplied Update 8 reference image.
+
+
+### Step 1s: mark de-rope continuation as a working example
+
+- Renamed the bundled workflow to `NEW - 2MP De-Rope Continuation - Working Example.json`.
+- The graph itself is unchanged; the name and workflow guide now make explicit that this is a functional reference with exposed seam/timing plumbing rather than a tidied showcase graph.
+
+### Step 1t: dated update references
+
+- Dated the prominent Update 7 and Update 8 references in the main README, workflow guide, and technical architecture so users can tell when each numbered update landed.
+- Update 8 is recorded as starting on **2026-08-30** while it remains work in progress.
+- Kept this file as the authoritative complete dated history.
+
+### Step 1u: README recent-changes summary and technical chronology
+
+- Removed the full Update 1–8 timeline from the main README; the README now focuses on important changes from the most recent updates and links here for the complete history.
+- Expanded the Update 8 README section with the cache-isolation fix that prevents Active Clips / Active Extensions from invalidating existing sampler hashes, modular final AV/Music inputs, deterministic preview ordering, granular fractional V2V behavior, lazy H3 mask-precision compatibility, exact 40 Hz audio-grid handling, calculated AV-Bridge timing, and the dynamic de-rope continuation workflow/node.
+- Added the complete dated Update 1–8 chronology to `TECHNICAL_ARCHITECTURE.md` as a technical orientation index while retaining this file as the authoritative detailed change log.
+- Added regressions that require the README to stay timeline-free while preserving the important Update 8 bug-fix/feature summary.
+
+
+### Step 1x: workflow-guide cleanup
+
+- Removed obsolete references to superseded V2V packaging; Update 8 documents only the integrated `H3 V2V Granular Fractional Denoise` path and current dependencies.
+- Expanded V2V tuning guidance: when source motion is not transferring strongly enough, reduce `global_strength` in small steps so slightly more source-latent structure remains as the motion/performance guide.
+- Kept pass-2 denoise experimentation inside the workflow note itself instead of repeating that note's suggestion in the workflow README.
+- Updated AV Extension guidance to reflect controller-owned activation: **Active Extensions** enables/bypasses managed extension groups automatically, so users do not manually enable extension groups in order.
+- Simplified AV Bridge timing wording while retaining the shared-control and 40-Hz-grid behavior.
+
+
+## Update 8 AV Extension source-preview follow-up — 2026-08-30
+
+The Update 8 AV Extension workflow restores the normal `VHS_LoadVideo` source picker so Existing Video starts retain VideoHelperSuite's inline source preview, while keeping the silent-container workaround inside the MultiRef source-audio policy.
+
+- `VHS_LoadVideo.audio` is intentionally left completely unconnected.
+- `VHS_LoadVideo.video_info` identifies the selected source loader to `H3 Source Audio Policy`; the policy reads the selected filename from ComfyUI's queued `PROMPT`/`UNIQUE_ID` context and invokes ffmpeg directly.
+- A genuine missing source-audio stream becomes exact-duration stereo silence. Other ffmpeg failures remain errors.
+- **Regenerate with H3** keeps the full-source protected-video / generated-audio branch introduced in the local AV Extension work.
+- The AV controller keeps its cache-isolated execution parameters so preview-only controller changes do not unnecessarily invalidate generation branches.
+- Update 8's exact H3 40 Hz audio-grid encoding paths remain authoritative; the older local audio-encoding implementations were not copied back over them.
+
+### Update 8 AV Extension final-stream modular inputs — Step 1j
+
+`H3 Stream AV Extensions to VHS` no longer requires a contiguous fixed set
+of extension sampler inputs. The node now has an **Input Count** widget (1–64)
+and a browser-side **Update inputs** button that exposes exactly that many
+`extension_N` latent sockets. Disconnected sockets are ignored; connected
+extensions are streamed in socket-number order.
+
+The bundled `NEW - AV Extension` workflow keeps its controller's
+`active_extensions` parameter connected as an optional execution cap. This
+preserves the controller behavior where inactive/bypassed higher extension
+groups remain lazy, while custom workflows can leave the cap disconnected and
+use the final streamer as a standalone modular multi-extension output node.
+
+### Update 8 AV Extension preview ordering + bypass-safe final output — Step 1k
+
+The bundled `NEW - AV Extension` graph now places a lazy preview barrier in front of the modular final streamer. The barrier requests only the highest enabled extension `VHS_VideoCombine` output inside the controller cap, and the final streamer resolves that gate before requesting its expensive source/extension latent inputs. This makes the last enabled extension preview complete before final all-clips assembly begins.
+
+`H3 Stream AV Extensions to VHS` is now an intermediate-output node backed by the existing terminal sink pattern. The sink's filename input is optional, so bypassing or disconnecting the final streamer is a valid no-op instead of a prompt-validation failure. The streamer's optional same-type preview gate also gives ComfyUI a compatible passthrough when bypass mode rewires the node.
+
+### Update 8 Music Video modular final output + cache-isolated Active Clips — Step 1l
+
+The Music Video final-output path now shares the reusable modular-streaming behavior introduced for AV Extension while preserving the master-song timeline contract.
+
+- `H3 Stream Final Music Video to VHS` now exposes an **Input Count** widget (1–64) plus the browser-side **Update inputs** action for dynamic `clip_N` latent sockets.
+- Standalone workflows may leave trailing clip sockets disconnected. Connected Music Video clips must remain a contiguous prefix from Clip 1; middle holes are rejected because compacting later clips would move their visuals against the untouched master-song timeline.
+- The bundled workflow keeps all 20 clip sampler links available and uses a cache-isolated internal `PrimitiveInt` as the active-clip cap.
+- `H3 Music Video Controller.active_clips` is no longer a backend data dependency of the final streamer or any sampler. The frontend mirrors only the Active Clips widget into that internal parameter; changing Preview mode therefore does not invalidate final assembly, and changing Active Clips cannot change any existing sampler input hash.
+- The shared `H3 Last Active VHS Preview Barrier` now supports both AV Extension and Music Video and waits on the highest enabled clip preview before final assembly requests clip latents.
+- The existing optional final VHS sink remains bypass-safe.
+
+
+### Update 8 AV Bridge timing controls — Step 1m
+
+`UTILITY - AV Bridge` now derives its post-sampler audio trim and visual overlap from shared timing controls instead of independent duplicated constants.
+
+- A shared target-frame control drives the H3 Image-to-Video target length and the audio-grid duration calculation.
+- A shared preserve-frame control drives `H3 Masked AV Bridge`; the bridge's validated `preserve_frames` output drives both visual overlap nodes.
+- A shared FPS control drives both bridge source-FPS inputs, final `CreateVideo`, and the trim calculations.
+- `ComfyMathExpression` nodes calculate the decoded generated-audio window on the H3 40-Hz grid: `round(preserve / fps * 40) / 40` for the trim start and `(round(target / fps * 40) - 2 * round(preserve / fps * 40)) / 40` for the generated middle duration.
+- The default `192 / 39 / 24` values therefore still evaluate to exactly `1.625 s` and `4.75 s`, but changing the timing controls no longer requires manually updating multiple unrelated widgets.
+
+### Update 8 rebase onto merged Update 7 (PR #3) — Step 1n
+
+Update 8 is now based on the repository's merged Update 7 from Reithan's PR #3 instead of carrying a parallel numbering line.
+
+- Preserved Update 7's arbitrary `insert_frame` support, `H3 Assemble Interior Insert`, hard-masked keyframes, and H3 Set/Clear AV Noise Mask utilities.
+- Preserved the maintainer servicing added before the Update 7 merge: nested H3 AV mask composition for hard keyframes, explicit protected-step overlap rejection, corrected snap-down wording, and graph-role-based regressions.
+- Reconciled `H3 Existing Video Masked Context` with Update 8's source-audio policy and strict exact-grid PCM encoder. A 39-frame preserved segment still enters the audio VAE as exactly 65 H3 ticks / 52,000 PCM samples at 32 kHz even when placed at an interior frame such as 17. Non-51-frame insert offsets quantize only the destination audio-step start and keep the existing warning; multiples of 51 align both clocks exactly.
+- Kept `H3 Assemble Interior Insert` on exact frame-derived PCM splice boundaries after decode, so H3 latent-grid placement quantization does not accumulate into final-output audio drift.
+- Kept all Update 8 AV Extension, Music Video, V2V/de-rope/upscale, cache-isolation, preview-barrier, bypass-safe final-output, and calculated AV-Bridge timing changes.
+- Renamed the former Update-7 WIP test/docs references to Update 8 while leaving Reithan's merged feature history as Update 7.
+
+The Step-1n combined CPU/static regression suite passes 167 checks before final package/checksum regeneration.
+
+### Step 1v: README V2V workflow highlight
+
+- Added a dedicated Update 8 README highlight for `NEW - V2V Latent Motion Transfer (with upscale and de-rope)` before the granular-denoise implementation bullet.
+- The README now explains that the workflow transfers motion/timing/performance from a source video, applies generated-x0 de-rope, learned latent upscaling, a second refinement pass, and exact timeline recovery.
+- Clarified that the workflow uses `H3 V2V Granular Fractional Denoise` specifically to retain a faint source-latent motion guide while leaving enough denoise freedom to replace identity and appearance.
+- Runtime code and workflow graphs are unchanged.
+
+
+### Step 1y: AV Extension Prompt Director note
+
+- Embedded the supplied **MINIMAX H3 AV EXTENSION — PROMPT DIRECTOR** directly at the top of `NEW - AV Extension.json` as a workflow Note for copy/paste prompt planning guidance.
+- Removed the stale workflow-note instruction to manually enable extensions in order; the bundled controller owns managed extension-group activation through **Active Extensions**.

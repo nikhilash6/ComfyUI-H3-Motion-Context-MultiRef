@@ -1,8 +1,8 @@
 {
   "id": "fc9b7952-1377-4272-8632-358cde75b0f0",
   "revision": 0,
-  "last_node_id": 61,
-  "last_link_id": 34,
+  "last_node_id": 75,
+  "last_link_id": 48,
   "nodes": [
     {
       "id": 1,
@@ -391,6 +391,14 @@
           "shape": 7,
           "type": "IMAGE",
           "link": null
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 35
         }
       ],
       "outputs": [
@@ -477,7 +485,7 @@
           "widget": {
             "name": "start_fps"
           },
-          "link": null
+          "link": 37
         },
         {
           "name": "end_fps",
@@ -485,7 +493,7 @@
           "widget": {
             "name": "end_fps"
           },
-          "link": null
+          "link": 38
         },
         {
           "name": "preserve_frames",
@@ -493,7 +501,7 @@
           "widget": {
             "name": "preserve_frames"
           },
-          "link": null
+          "link": 36
         },
         {
           "name": "crop",
@@ -520,7 +528,10 @@
         {
           "name": "preserve_frames",
           "type": "INT",
-          "links": null
+          "links": [
+            39,
+            40
+          ]
         }
       ],
       "properties": {
@@ -849,6 +860,22 @@
           "name": "audio",
           "type": "AUDIO",
           "link": 23
+        },
+        {
+          "name": "start_index",
+          "type": "FLOAT",
+          "widget": {
+            "name": "start_index"
+          },
+          "link": 47
+        },
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "widget": {
+            "name": "duration"
+          },
+          "link": 48
         }
       ],
       "outputs": [
@@ -989,7 +1016,7 @@
           "widget": {
             "name": "overlap"
           },
-          "link": null
+          "link": 39
         }
       ],
       "outputs": [
@@ -1053,7 +1080,7 @@
           "widget": {
             "name": "overlap"
           },
-          "link": null
+          "link": 40
         }
       ],
       "outputs": [
@@ -1118,7 +1145,7 @@
           "widget": {
             "name": "fps"
           },
-          "link": null
+          "link": 41
         }
       ],
       "outputs": [
@@ -1195,6 +1222,283 @@
         "auto",
         "auto"
       ]
+    },
+    {
+      "id": 70,
+      "type": "PrimitiveInt",
+      "pos": [
+        -1810,
+        -1370
+      ],
+      "size": [
+        300,
+        82
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            35,
+            44
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.31.0",
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        192,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "value": 192,
+        "fixed": "fixed"
+      }
+    },
+    {
+      "id": 71,
+      "type": "PrimitiveInt",
+      "pos": [
+        -1810,
+        -1250
+      ],
+      "size": [
+        300,
+        82
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            36,
+            42,
+            45
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.31.0",
+        "Node name for S&R": "PrimitiveInt"
+      },
+      "widgets_values": [
+        39,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "value": 39,
+        "fixed": "fixed"
+      }
+    },
+    {
+      "id": 72,
+      "type": "PrimitiveFloat",
+      "pos": [
+        -1810,
+        -1130
+      ],
+      "size": [
+        300,
+        72
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            37,
+            38,
+            41,
+            43,
+            46
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.30.0",
+        "Node name for S&R": "PrimitiveFloat"
+      },
+      "widgets_values": [
+        24.0
+      ],
+      "widgets_values_named": {
+        "value": 24.0
+      }
+    },
+    {
+      "id": 73,
+      "type": "ComfyMathExpression",
+      "pos": [
+        1660,
+        -650
+      ],
+      "size": [
+        410,
+        150
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "values.a",
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 42
+        },
+        {
+          "label": "b",
+          "name": "values.b",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 43
+        },
+        {
+          "label": "c",
+          "name": "values.c",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            47
+          ]
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.31.0",
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "round(a / b * 40) / 40"
+      ],
+      "widgets_values_named": {
+        "expression": "round(a / b * 40) / 40"
+      }
+    },
+    {
+      "id": 74,
+      "type": "ComfyMathExpression",
+      "pos": [
+        1660,
+        -450
+      ],
+      "size": [
+        500,
+        150
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "values.a",
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 44
+        },
+        {
+          "label": "b",
+          "name": "values.b",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 45
+        },
+        {
+          "label": "c",
+          "name": "values.c",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            48
+          ]
+        },
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.31.0",
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "(round(a / c * 40) - 2 * round(b / c * 40)) / 40"
+      ],
+      "widgets_values_named": {
+        "expression": "(round(a / c * 40) - 2 * round(b / c * 40)) / 40"
+      }
+    },
+    {
+      "id": 75,
+      "type": "Note",
+      "pos": [
+        -1810,
+        -1010
+      ],
+      "size": [
+        650,
+        300
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "BRIDGE TIMING\n\nThe three values above are the shared timing controls: target H3 frames, preserved frames per side, and FPS. They drive the H3 target length, bridge preservation, visual overlap, output FPS, and generated-audio trim.\n\nThe audio trim is calculated on H3's 40 Hz latent grid so it removes exactly the protected audio head/tail from the decoded bridge. Defaults 192 / 39 / 24 evaluate to 1.625 s trim start and 4.75 s generated middle.\n\nUse exact H3 video runs (5, 22, 39, 56, ...). Values such as 39 and 192 also land exactly on shared 24-fps / 40-Hz AV boundaries."
+      ],
+      "widgets_values_named": {
+        "text": "BRIDGE TIMING\n\nThe three values above are the shared timing controls: target H3 frames, preserved frames per side, and FPS. They drive the H3 target length, bridge preservation, visual overlap, output FPS, and generated-audio trim.\n\nThe audio trim is calculated on H3's 40 Hz latent grid so it removes exactly the protected audio head/tail from the decoded bridge. Defaults 192 / 39 / 24 evaluate to 1.625 s trim start and 4.75 s generated middle.\n\nUse exact H3 video runs (5, 22, 39, 56, ...). Values such as 39 and 192 also land exactly on shared 24-fps / 40-Hz AV boundaries."
+      },
+      "color": "#234",
+      "bgcolor": "#345"
     }
   ],
   "links": [
@@ -1469,6 +1773,118 @@
       61,
       0,
       "VIDEO"
+    ],
+    [
+      35,
+      70,
+      0,
+      20,
+      4,
+      "INT"
+    ],
+    [
+      36,
+      71,
+      0,
+      21,
+      9,
+      "INT"
+    ],
+    [
+      37,
+      72,
+      0,
+      21,
+      7,
+      "FLOAT"
+    ],
+    [
+      38,
+      72,
+      0,
+      21,
+      8,
+      "FLOAT"
+    ],
+    [
+      39,
+      21,
+      2,
+      50,
+      2,
+      "INT"
+    ],
+    [
+      40,
+      21,
+      2,
+      51,
+      2,
+      "INT"
+    ],
+    [
+      41,
+      72,
+      0,
+      60,
+      2,
+      "FLOAT"
+    ],
+    [
+      42,
+      71,
+      0,
+      73,
+      0,
+      "INT"
+    ],
+    [
+      43,
+      72,
+      0,
+      73,
+      1,
+      "FLOAT"
+    ],
+    [
+      44,
+      70,
+      0,
+      74,
+      0,
+      "INT"
+    ],
+    [
+      45,
+      71,
+      0,
+      74,
+      1,
+      "INT"
+    ],
+    [
+      46,
+      72,
+      0,
+      74,
+      2,
+      "FLOAT"
+    ],
+    [
+      47,
+      73,
+      0,
+      40,
+      1,
+      "FLOAT"
+    ],
+    [
+      48,
+      74,
+      0,
+      40,
+      2,
+      "FLOAT"
     ]
   ],
   "groups": [

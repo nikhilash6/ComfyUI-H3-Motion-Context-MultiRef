@@ -1,9 +1,10 @@
 """MiniMax H3 music-video clip prep with exact master-song audio and live video context."""
 
 import logging
-import math
 
 import torch
+
+from .h3_audio_grid import audio_grid_geometry, encode_exact_audio_grid
 
 import comfy.nested_tensor
 import comfy.utils
@@ -296,70 +297,42 @@ class MiniMaxH3SongMaskedAVContext:
         audio_slice = waveform[..., start_sample:picture_end_sample]
         audio_slice = _fit_waveform(audio_slice, picture_samples, "master audio slice")
 
-        grid_samples = int(math.ceil(expected_audio_steps / AUDIO_HZ * vae_sr))
-        encode_samples = max(picture_samples, grid_samples)
-        encode_end_sample = start_sample + encode_samples
-        encode_slice = waveform[..., start_sample:encode_end_sample]
-        encode_slice = _fit_waveform(
-            encode_slice, encode_samples, "master audio latent-grid slice"
+        # Encode on the target H3 audio grid, not the picture-duration PCM
+        # span.  This keeps clip_start_seconds exact and makes ComfyUI's generic
+        # VAE center-crop a no-op.  The rounded 40-Hz target can end slightly
+        # before or after the last pixel-frame boundary.
+        _grid_sr, samples_per_latent, grid_samples = audio_grid_geometry(
+            audio_vae, expected_audio_steps
         )
-
-        audio_full = audio_vae.encode(encode_slice.movedim(1, -1))
-        if getattr(audio_full, "ndim", 0) != 4:
-            raise ValueError(
-                "h3_song_audio: audio VAE returned %s, expected [B,C,2,T]"
-                % (tuple(getattr(audio_full, "shape", ())),)
-            )
-        got_audio_steps = int(audio_full.shape[-1])
-
-        # Some audio-VAE wrappers quantize their temporal output down at an
-        # encoder boundary.  If the exact grid span is still one/few tokens
-        # short, retry with a small amount of real master-audio lookahead (or
-        # tail silence if the song has ended), then crop back to the target.
-        # This is preferable to fabricating latent tokens by repeating/padding
-        # latent values and preserves the clip_start_seconds alignment.
-        if got_audio_steps < expected_audio_steps:
-            missing = expected_audio_steps - got_audio_steps
-            guard_samples = int(math.ceil((missing + 1) * vae_sr / AUDIO_HZ))
-            retry_samples = encode_samples + guard_samples
-            retry_end_sample = start_sample + retry_samples
-            retry_slice = waveform[..., start_sample:retry_end_sample]
-            retry_slice = _fit_waveform(
-                retry_slice, retry_samples, "master audio latent-grid retry slice"
-            )
-            retry_full = audio_vae.encode(retry_slice.movedim(1, -1))
-            if getattr(retry_full, "ndim", 0) != 4:
-                raise ValueError(
-                    "h3_song_audio: audio VAE retry returned %s, expected [B,C,2,T]"
-                    % (tuple(getattr(retry_full, "shape", ())),)
-                )
-            retry_steps = int(retry_full.shape[-1])
-            _LOG.warning(
-                "h3_song_audio: audio VAE initially produced %d/%d target steps; "
-                "retried with %.2f ms of latent-grid lookahead and got %d",
-                got_audio_steps,
-                expected_audio_steps,
-                guard_samples / vae_sr * 1000.0,
-                retry_steps,
-            )
-            audio_full = retry_full
-            got_audio_steps = retry_steps
-
-        if got_audio_steps < expected_audio_steps:
+        if _grid_sr != vae_sr:
             raise RuntimeError(
-                "h3_song_audio: target clip needs %d audio latent steps but the audio VAE "
-                "produced only %d even after latent-grid lookahead"
-                % (expected_audio_steps, got_audio_steps)
+                "h3_song_audio: audio VAE grid reports %d Hz but audio_sample_rate is %d"
+                % (_grid_sr, vae_sr)
             )
-        if got_audio_steps > expected_audio_steps:
-            _LOG.info(
-                "h3_song_audio: audio VAE produced %d steps for a %d-step target; "
-                "keeping the first %d so the slice stays aligned to clip_start_seconds",
-                got_audio_steps,
-                expected_audio_steps,
-                expected_audio_steps,
-            )
-            audio_full = audio_full[..., :expected_audio_steps]
+        encode_end_sample = start_sample + grid_samples
+        encode_slice = waveform[..., start_sample:min(encode_end_sample, int(waveform.shape[-1]))]
+        pcm_pad = grid_samples - int(encode_slice.shape[-1])
+        if pcm_pad > 0:
+            expected_overhang = max(0, grid_samples - picture_samples)
+            tolerance = max(2, int(round(vae_sr * 0.001)))
+            if pcm_pad > expected_overhang + tolerance:
+                raise ValueError(
+                    "h3_song_audio: master audio is %d samples short of the target H3 audio grid; "
+                    "only %d samples are explained by picture-to-40-Hz endpoint rounding"
+                    % (pcm_pad, expected_overhang)
+                )
+            encode_slice = torch.nn.functional.pad(encode_slice, (0, pcm_pad))
+
+        audio_full, _grid_diag = encode_exact_audio_grid(
+            audio_vae, encode_slice, expected_audio_steps, "h3_song_audio: master song"
+        )
+        _LOG.debug(
+            "h3_song_audio: exact audio grid %d steps x %d samples; picture delta %+d samples; tail pad %d",
+            expected_audio_steps,
+            samples_per_latent,
+            grid_samples - picture_samples,
+            max(0, pcm_pad),
+        )
 
         out_video = target_video.clone()
         out_audio = target_audio.clone()

@@ -4,6 +4,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
@@ -109,9 +110,24 @@ class VideoVAE:
 
 class AudioVAE:
     audio_sample_rate = 32000
+    first_stage_model = SimpleNamespace(samples_per_latent=800)
+
+    def __init__(self):
+        self.calls = []
 
     def encode(self, x):
-        t = round(x.shape[1] / 32000 * 40)
+        # Model the current generic Comfy VAE wrapper: non-grid input would be
+        # center-cropped before H3 sees it. Exact-grid callers must make offset 0.
+        length = int(x.shape[1])
+        cropped = (length // 800) * 800
+        offset = (length % 800) // 2
+        self.calls.append({
+            "length": length,
+            "crop_offset": offset,
+            "first": float(x[0, 0, 0]),
+            "last": float(x[0, length - 1, 0]),
+        })
+        t = cropped // 800
         value = float(x.mean())
         return torch.full((1, 32, 2, t), value)
 
@@ -190,3 +206,32 @@ def test_rejects_non_h3_preserve_length():
         assert "exact H3 video run" in str(exc)
     else:
         raise AssertionError("40-frame preserve length should have been rejected")
+
+
+def test_56_frame_bridge_uses_exact_grid_and_keeps_both_seams_fixed():
+    # 56 frames is a valid H3 video-VAE run but NOT a shared 24/40-Hz boundary:
+    # 56/24*40 = 93.333... -> 93 audio ticks = 74,400 samples.
+    video = torch.zeros((1, 24, 57, 2, 4))
+    audio = torch.zeros((1, 32, 2, 320))
+    latent = {"samples": NestedTensor((video, audio))}
+    frames = torch.zeros((100, 32, 64, 3))
+    full = round(100 / 24 * 32000)
+    start_wave = torch.arange(full, dtype=torch.float32).reshape(1, 1, -1).repeat(1, 2, 1)
+    end_wave = (torch.arange(full, dtype=torch.float32) + 1000000).reshape(1, 1, -1).repeat(1, 2, 1)
+    start_audio = {"waveform": start_wave, "sample_rate": 32000}
+    end_audio = {"waveform": end_wave, "sample_rate": 32000}
+    av = AudioVAE()
+
+    bridge.MiniMaxH3MaskedAVBridge().prepare(
+        latent, VideoVAE(), av, frames, start_audio, frames, end_audio,
+        24.0, 24.0, 56, "disabled",
+    )
+
+    assert len(av.calls) == 2
+    tail, head = av.calls
+    assert tail["length"] == head["length"] == 93 * 800 == 74400
+    assert tail["crop_offset"] == head["crop_offset"] == 0
+    # Tail window is end-aligned to the start->generated seam.
+    assert tail["last"] == float(full - 1)
+    # Head window is start-aligned to the generated->end seam.
+    assert head["first"] == 1000000.0

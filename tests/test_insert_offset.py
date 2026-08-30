@@ -154,7 +154,7 @@ def test_insert_frame_zero_identical_prefix_behavior():
 
 
 def test_insert_frame_non_multiple_snaps_down():
-    """Non-multiple-of-17 insert_frame snaps down silently (matches context_length behavior)."""
+    """Non-multiple-of-17 insert_frame snaps down with a warning (matches runtime behavior)."""
     module = _load_module()
     # insert_frame=10 -> snaps down to 0
     out, trim, ins, preserved = _prepare(module, insert_frame=10)
@@ -282,3 +282,36 @@ def test_full_coverage_insert_zero_produces_all_zero_masks():
     assert trim == 141
     assert vm.max() == 0.0
     assert am.max() == 0.0
+
+
+def test_interior_insert_audio_context_uses_exact_h3_grid_pcm():
+    """Offset quantization changes placement only; preserved PCM stays exact-grid."""
+    module = _load_module()
+
+    class RecordingAudioVAE(AudioVAE):
+        def __init__(self):
+            self.pcm_lengths = []
+
+        def encode(self, x):
+            self.pcm_lengths.append(int(x.shape[1]))
+            return super().encode(x)
+
+    latent = _make_latent(video_steps=42, audio_steps=235)
+    source_frames = torch.rand((120, 32, 64, 3))
+    source_audio = {"waveform": torch.rand((1, 2, 160000)), "sample_rate": 32000}
+    audio_vae = RecordingAudioVAE()
+    node = module.MiniMaxH3ExistingVideoMaskedContext()
+
+    out, trim, ins, preserved = node.prepare(
+        latent, VideoVAE(), audio_vae,
+        source_frames, source_audio, 24.0,
+        39, "disabled", 0, 17,
+    )
+
+    # 39 frames at 24 fps = exactly 65 H3 audio ticks; each tick is 800 PCM
+    # samples at 32 kHz. insert_frame=17 quantizes the *placement* to audio
+    # step 28, but must not alter/crop/pad the preserved source PCM window.
+    assert audio_vae.pcm_lengths == [65 * 800]
+    assert preserved == 39 and ins == 17 and trim == 0
+    _, audio_mask = out["noise_mask"].unbind()
+    assert audio_mask[..., 28:93].max() == 0.0

@@ -2,7 +2,7 @@
 # now uses ComfyUI PR #15439 guide + MultiRef support without core monkey-patches.
 # Original project by NikoDemon80. See MODIFICATIONS.md. GPL-3.0.
 
-"""Pin previous-clip motion at the head of an H3 clip.
+"""Pin previous-clip motion on an H3 target timeline.
 
 Wire it between a stock H3 conditioning node and the sampler:
 
@@ -23,8 +23,8 @@ encode_mode
           stills. Far fewer rows and one VAE load.
 
 anchor_mode
-  head    native ComfyUI guide at target frame 0. The guided head is returned
-          in the generated clip, so trim that many frames before concatenating.
+  head    native ComfyUI guide semantics. target_start=0 places it at the head;
+          a positive target_start places the guide inside the target timeline.
   before  legacy research mode from the old PackedLayout monkey-patch; rejected
           on the native-core path because native guides live on the target timeline.
 """
@@ -32,6 +32,11 @@ anchor_mode
 import json
 import logging
 import os
+from fractions import Fraction
+
+import torch
+
+from .h3_audio_grid import audio_grid_geometry, encode_exact_audio_grid
 
 import torch
 
@@ -51,9 +56,13 @@ from .existing_video_extension import (
     MiniMaxH3GeneratedAVMaskedContext,
     MiniMaxH3StartMaskedContext,
     MiniMaxH3AssembleExtension,
+    MiniMaxH3SourceAudioRegenLength,
+    MiniMaxH3SourceAudioRegenMask,
+    MiniMaxH3SourceAudioPolicy,
     MiniMaxH3AssembleInterior,
     MiniMaxH3SetAVNoiseMask,
     MiniMaxH3ClearAVNoiseMask,
+    MiniMaxH3FanRecoveredContext,
     _require_h3_mask_support,
 )
 from .h3_masked_bridge import MiniMaxH3MaskedAVBridge
@@ -61,10 +70,12 @@ from .h3_song_audio_context import MiniMaxH3SongMaskedAVContext
 from .h3_streaming_vhs import (
     MiniMaxH3StreamLiveExtensionAVToVHS,
     MiniMaxH3StreamLiveMusicVideoToVHS,
+    MiniMaxH3LastActiveVHSPreviewBarrier,
     MiniMaxH3FinalizeVHSOutput,
 )
 from .h3_auto_crop32 import MiniMaxH3CropTo32, MiniMaxH3StartCanvasSelector
 from .h3_timing import crossfade_plan
+from .h3_v2v_fractional import H3V2VGranularFractionalDenoise
 
 try:
     import torchaudio
@@ -111,11 +122,13 @@ def _resize(image, width, height, crop):
     return samples.movedim(1, -1)
 
 
-def _encode_tail_audio(audio_vae, audio, seconds):
-    """Encode the last `seconds` of a clip's audio with the H3 audio VAE.
+def _encode_tail_audio(audio_vae, audio, frame_count):
+    """Encode a seam-aligned tail of context audio on H3's exact 40-Hz grid.
 
-    Returns ([1, 32, 2, T] latent, T) where T counts 40 Hz latent steps,
-    matching what the layout calls ref_audio_t.
+    The tail is end-aligned because this audio leads directly into the new
+    generation.  Exact AV boundaries (39/90/141/...) are unchanged.  For an
+    off-grid frame count, only the older/outer edge moves by the unavoidable
+    <= half audio tick; the continuation seam stays fixed.
     """
     waveform = audio["waveform"]  # [B, C, L]
     sr = int(audio["sample_rate"])
@@ -126,15 +139,52 @@ def _encode_tail_audio(audio_vae, audio, seconds):
                 "h3_motion_context: context_audio is %d Hz but the VAE wants %d Hz "
                 "and torchaudio is not available to resample." % (sr, vae_sr))
         waveform = torchaudio.functional.resample(waveform, sr, vae_sr)
-    want = int(round(seconds * vae_sr))
+
+    frame_count = int(frame_count)
+    expected_steps = int(round(frame_count / float(FPS) * AUDIO_HZ))
+    _sr, samples_per_latent, grid_samples = audio_grid_geometry(
+        audio_vae, expected_steps
+    )
+    if _sr != vae_sr:
+        raise RuntimeError(
+            "h3_motion_context: audio VAE grid reports %d Hz but audio_sample_rate is %d"
+            % (_sr, vae_sr)
+        )
+
     have = int(waveform.shape[-1])
-    if have < want:
-        _LOG.warning("h3_motion_context: context_audio is %.3fs, shorter than the "
-                     "%.3fs of pinned video. Pinning what there is.",
-                     have / vae_sr, seconds)
+    picture_samples = int(round(frame_count / float(FPS) * vae_sr))
+    if have >= grid_samples:
+        window = waveform[..., have - grid_samples:]
+        steps = expected_steps
     else:
-        waveform = waveform[..., have - want:]
-    z = audio_vae.encode(waveform[:1].movedim(1, -1))  # [1, 32, 2, T]
+        # If the only shortage is the normal 24-fps -> 40-Hz endpoint rounding,
+        # left-pad a partial first cell so the important tail/seam stays fixed.
+        expected_overhang = max(0, grid_samples - picture_samples)
+        tolerance = max(2, int(round(vae_sr * 0.001)))
+        shortage = grid_samples - have
+        if have >= picture_samples - tolerance and shortage <= expected_overhang + tolerance:
+            window = torch.nn.functional.pad(waveform, (shortage, 0))
+            steps = expected_steps
+            _LOG.warning(
+                "h3_motion_context: context audio ends on the picture boundary but the "
+                "H3 audio grid extends %d samples earlier; left-padding that partial boundary cell",
+                shortage,
+            )
+        else:
+            steps = min(expected_steps, have // samples_per_latent)
+            if steps < 1:
+                raise ValueError("h3_motion_context: context_audio is too short for one H3 audio step")
+            grid_samples = steps * samples_per_latent
+            window = waveform[..., have - grid_samples:]
+            _LOG.warning(
+                "h3_motion_context: context_audio is shorter than the requested %d-frame window; "
+                "pinning the final %d complete H3 audio steps",
+                frame_count, steps,
+            )
+
+    z, _diag = encode_exact_audio_grid(
+        audio_vae, window[:1], steps, "h3_motion_context: context tail"
+    )
     return z, int(z.shape[-1])
 
 
@@ -171,17 +221,12 @@ def _video_from_latent(latent):
 
 
 def _audio_tail_from_latent(latent, a_frames):
-    """Slice the last `a_frames` worth of audio steps straight out of a
-    generated H3 latent, skipping the decode -> re-encode round trip.
+    """Slice the final 40-Hz audio cells straight from an existing H3 latent.
 
-    Returns (tail latent [1, C, 2, rt], rt, overhang) where rt counts
-    40 Hz latent steps and overhang is the fraction of a step by which the
-    clip's audio grid extends past its last pixel frame. H3 rounds the
-    audio grid UP (124 frames want 206.67 steps, the layout allocates
-    207), so the latent's final step reaches ~overhang/40 s beyond the
-    last frame. The decoded-audio path never sees this because match_tail
-    cuts it; on this path the caller compensates the placement with it,
-    so the pinned content lands exactly where its samples actually sit.
+    This path never re-encodes PCM, so it is not affected by the generic VAE
+    center-crop issue.  For video lengths that fall between 40-Hz boundaries,
+    H3's target layout rounds to the nearest audio cell; taking the final cells
+    keeps the continuation seam aligned to the latent timeline.
     """
     parts = _streams_from_latent(latent)
     if len(parts) < 2:
@@ -197,13 +242,6 @@ def _audio_tail_from_latent(latent, a_frames):
         raise ValueError("h3_motion_context: expected audio latent [B,C,2,T], "
                          "got shape %s" % (tuple(audio.shape),))
     total_t = int(audio.shape[-1])
-    frames = _pixel_frames(int(video.shape[2]))
-    overhang = total_t - FRAME_RESCALE * frames
-    if not (0.0 <= overhang < 1.0):
-        _LOG.warning(
-            "h3_motion_context: context_latent audio grid is unexpected "
-            "(%d steps for %d frames); assuming no overhang.", total_t, frames)
-        overhang = 0.0
     rt = int(round(a_frames / float(FPS) * AUDIO_HZ))
     if rt > total_t:
         _LOG.warning("h3_motion_context: asked for %d audio steps, the latent "
@@ -212,7 +250,7 @@ def _audio_tail_from_latent(latent, a_frames):
     if rt < 1:
         raise ValueError("h3_motion_context: audio window is empty")
     tail = audio[:1, ..., total_t - rt:].clone()
-    return tail, rt, float(overhang)
+    return tail, rt
 
 
 class MiniMaxH3MotionContext:
@@ -235,8 +273,9 @@ class MiniMaxH3MotionContext:
                                "each pinned as a separate still."}),
                 "anchor_mode": (["head", "before"], {
                     "default": "head",
-                    "tooltip": "head uses native ComfyUI guide semantics at frame 0. "
-                               "before is a legacy mode and is rejected on native core."}),
+                    "tooltip": "head uses native ComfyUI guide semantics; target_start "
+                               "controls where the guide begins. before is a legacy mode "
+                               "and is rejected on native core."}),
                 "crop": (["disabled", "center"], {"default": "disabled"}),
                 "audio_context_length": ("INT", {
                     "default": 0, "min": 0, "max": 9999,
@@ -253,6 +292,12 @@ class MiniMaxH3MotionContext:
                                "clip, which the model imitates (similar "
                                "music, not phase-locked) rather than "
                                "continues."}),
+                "target_start": ("INT", {
+                    "default": 0, "min": 0, "max": 999999,
+                    "tooltip": "Target frame where this motion guide begins. "
+                               "0 preserves normal head-context behavior; a "
+                               "positive offset places the guide inside the target "
+                               "timeline and returns trim_frames=0."}),
             },
             "optional": {
                 "context_latent": ("LATENT", {
@@ -286,7 +331,7 @@ class MiniMaxH3MotionContext:
     def apply(self, conditioning, vae, latent, context_frames, context_length,
               encode_mode, anchor_mode, crop, audio_context_length=0,
               audio_mode="timeline", context_latent=None, audio_vae=None,
-              context_audio=None):
+              context_audio=None, target_start=0):
         _ensure_h3_native_guide_support(conditioning)
 
         if anchor_mode != "head":
@@ -310,11 +355,14 @@ class MiniMaxH3MotionContext:
             _LOG.warning(
                 "h3_motion_context: only %d frames supplied, guiding with %d",
                 available, n)
-        if n >= frame_count:
+        start = int(target_start)
+        if start < 0:
+            raise ValueError("h3_motion_context: target_start must be >= 0")
+        if start + n >= frame_count:
             raise ValueError(
-                "h3_motion_context: asked to guide %d frames in a %d-frame clip; "
-                "the guide must leave room for newly generated frames."
-                % (n, frame_count))
+                "h3_motion_context: guide span [%d, %d) does not leave room in a "
+                "%d-frame clip; the guide must leave room for newly generated frames."
+                % (start, start + n, frame_count))
 
         # Native #15439 guide semantics: a valid H3 clip is ONE keyframe whose
         # latent may contain many temporal tokens. PackedLayout assigns one
@@ -334,7 +382,7 @@ class MiniMaxH3MotionContext:
                 raise RuntimeError(
                     "h3_motion_context: exact %d-frame guide encoded to a latent "
                     "covering %d frames; refusing a phase-shifted guide." % (n, covered))
-            keyframes.append({"resolved_frame_index": 0, "latent": enc})
+            keyframes.append({"resolved_frame_index": start, "latent": enc})
             guide_kind = "native clip"
             span = covered
         else:
@@ -348,7 +396,7 @@ class MiniMaxH3MotionContext:
                     raise ValueError(
                         "h3_motion_context: frame %d encoded to %s; expected one "
                         "H3 still latent" % (i, tuple(getattr(enc, "shape", ()))))
-                keyframes.append({"resolved_frame_index": i, "latent": enc})
+                keyframes.append({"resolved_frame_index": start + i, "latent": enc})
             guide_kind = "native still sequence"
             span = n
 
@@ -364,7 +412,7 @@ class MiniMaxH3MotionContext:
                     _LOG.info(
                         "h3_motion_context: both context_latent and context_audio "
                         "wired; using latent audio to avoid a VAE round trip")
-                audio_latent, ref_audio_t, _unused_overhang = _audio_tail_from_latent(
+                audio_latent, ref_audio_t = _audio_tail_from_latent(
                     context_latent, a_frames)
                 audio_src = "latent"
             else:
@@ -372,16 +420,16 @@ class MiniMaxH3MotionContext:
                     raise ValueError(
                         "h3_motion_context: context_audio supplied without audio_vae")
                 audio_latent, ref_audio_t = _encode_tail_audio(
-                    audio_vae, context_audio, a_frames / float(FPS))
+                    audio_vae, context_audio, a_frames)
                 audio_src = "vae"
 
             if audio_mode == "timeline":
                 if a_frames > span:
                     raise ValueError(
                         "h3_motion_context: native timeline audio longer than the "
-                        "visual guide would need to start before target frame 0. "
+                        "visual guide would need to start before its target span. "
                         "Use audio_context_length <= context_length or ref mode.")
-                audio_start = int(span - a_frames)
+                audio_start = int(start + span - a_frames)
                 # Native #15439 audio guide: cond_audio rows share the guide's
                 # target-relative time origin. Attach to an existing keyframe at
                 # that index when possible, otherwise add an audio-only guide.
@@ -412,11 +460,11 @@ class MiniMaxH3MotionContext:
         out = node_helpers.conditioning_set_values(
             conditioning, {"minimax_keyframes": existing})
 
-        trim = span
+        trim = span if start == 0 else 0
         _LOG.info(
-            "h3_motion_context: native #15439 %s/head, %d frames at target 0, "
+            "h3_motion_context: native #15439 %s/head, %d frames at target %d, "
             "%d guide block(s), %d-frame target at %dx%d, trim %d, audio %s",
-            guide_kind, n, len(keyframes), frame_count, width, height, trim,
+            guide_kind, n, start, len(keyframes), frame_count, width, height, trim,
             ("%d frames -> %d latent steps (%.3fs) from %s as native cond_audio"
              % (a_frames, ref_audio_t, ref_audio_t / AUDIO_HZ, audio_src))
             if ref_audio_t and audio_mode == "timeline"
@@ -442,14 +490,13 @@ class MiniMaxH3MotionContextTrim:
     follows whatever the encoder actually produced.
 
     The tail needs the same treatment for a different reason. H3's audio
-    latent runs at 40 Hz against 24 fps picture, and FRAME_RESCALE is 5/3,
-    so a 124 frame clip wants 206.67 audio steps and the layout rounds up
-    to 207. Every clip therefore ships about 8.3 ms more sound than
-    picture. Concatenate two and the second seam is out by 16.7 ms, three
-    and it is 25 ms, and the error grows without bound down a chain. It
-    reads as a faint dampening at the first join and a short click at
-    later ones. Truncating the tail to exactly frames/fps stops it
-    accumulating.
+    latent runs at 40 Hz against 24 fps picture, so many valid video lengths
+    land between audio ticks. The target layout rounds to an integer audio
+    cell count, which can leave decoded audio a few milliseconds either
+    shorter or longer than the exact frame-derived picture duration. If that
+    difference is simply concatenated at every clip, it accumulates down the
+    chain. A tiny timebase conformance keeps the continuation seam fixed and
+    makes each delivered segment end on its exact 24-fps timeline boundary.
     """
 
     @classmethod
@@ -471,10 +518,11 @@ class MiniMaxH3MotionContextTrim:
                                "Create Video."}),
                 "match_tail": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "Truncate the audio so its duration equals "
-                               "frames/fps exactly. H3 rounds its audio grid up, "
-                               "so each clip carries about 8ms of extra sound "
-                               "that accumulates at every join in a chain."}),
+                    "tooltip": "Time-conform decoded audio so its duration equals "
+                               "frames/fps exactly. H3's 40-Hz audio grid can "
+                               "land a few milliseconds before or after a 24-fps "
+                               "picture boundary; this prevents that drift from "
+                               "accumulating across chained clips."}),
                 "video_crossfade_frames": ("INT", {
                     "default": 39, "min": 1, "max": 9999,
                     "tooltip": "Video overlap retained for final KJ crossfade. "
@@ -523,16 +571,33 @@ class MiniMaxH3MotionContextTrim:
                 frames_left = total - n
                 want = int(round(frames_left / float(fps) * sr))
                 have = int(waveform.shape[-1])
-                if have > want:
-                    over = have - want
-                    waveform = waveform[..., :want]
-                    _LOG.info("h3_motion_context: tail trimmed %d samples "
-                              "(%.2fms) so audio matches %d frames exactly",
-                              over, over / sr * 1000.0, frames_left)
-                elif have < want:
-                    _LOG.warning("h3_motion_context: audio is %.2fms shorter than "
-                                 "%d frames; leaving the tail alone",
-                                 (want - have) / sr * 1000.0, frames_left)
+                if have != want:
+                    fractional_change = abs(want - have) / float(want)
+                    if fractional_change > 0.005:
+                        raise ValueError(
+                            "h3_motion_context: decoded audio differs from the exact "
+                            "video timeline by %.3f%% (%d -> %d samples); refusing "
+                            "to hide a non-grid timing mismatch"
+                            % (fractional_change * 100.0, have, want)
+                        )
+                    ratio = Fraction(want, have).limit_denominator(10000)
+                    if torchaudio is not None:
+                        waveform = torchaudio.functional.resample(
+                            waveform, int(ratio.denominator), int(ratio.numerator)
+                        )
+                    else:
+                        waveform = torch.nn.functional.interpolate(
+                            waveform, size=want, mode="linear", align_corners=False
+                        )
+                    if int(waveform.shape[-1]) != want:
+                        waveform = torch.nn.functional.interpolate(
+                            waveform, size=want, mode="linear", align_corners=False
+                        )
+                    _LOG.info(
+                        "h3_motion_context: time-conformed decoded audio %d -> %d "
+                        "samples (%+.4f%%) so it matches %d frames exactly",
+                        have, want, (want - have) / float(have) * 100.0, frames_left
+                    )
 
             out_audio = {"waveform": waveform, "sample_rate": sr}
             _LOG.info("h3_motion_context: %d frames / %.4fs picture, %.4fs sound, "
@@ -1015,8 +1080,8 @@ class MiniMaxH3MusicVideoController:
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
         "Workflow controller for the checkpoint-free H3 Music Video example. "
-        "Its frontend companion applies real ComfyUI bypass mode to tagged clip/preview groups; "
-        "the backend active_clips output drives the lazy final streaming path."
+        "Its frontend companion applies real ComfyUI bypass mode to tagged clip/preview groups "
+        "and mirrors Active Clips into a cache-isolated execution parameter."
     )
 
     def select(self, active_clips=1, previews=PREVIEW_ALL):
@@ -1035,6 +1100,8 @@ class MiniMaxH3AVExtensionController:
     PREVIEW_OFF = "Off"
     PREVIEW_LAST = "Last Active"
     PREVIEW_ALL = "All Active"
+    SOURCE_AUDIO_KEEP = "Keep source audio"
+    SOURCE_AUDIO_REGENERATE = "Regenerate with H3"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -1056,30 +1123,104 @@ class MiniMaxH3AVExtensionController:
                     "default": cls.PREVIEW_ALL,
                     "tooltip": "Off disables all intermediate VHS previews. Last Active previews only the final enabled extension. All Active previews every enabled extension and the generated starter when applicable.",
                 }),
+                "source_audio": ([cls.SOURCE_AUDIO_KEEP, cls.SOURCE_AUDIO_REGENERATE], {
+                    "default": cls.SOURCE_AUDIO_KEEP,
+                    "tooltip": "Existing Video only. Keep source audio preserves the original track (or exact-duration silence if none exists). Regenerate with H3 protects the complete source video and synthesizes a new synchronized soundtrack for the whole source clip before extension.",
+                }),
             }
         }
 
-    RETURN_TYPES = ("STRING", "INT", "INT", "STRING")
-    RETURN_NAMES = ("start_mode", "active_extensions", "audio_feather_ticks", "preview_mode")
+    RETURN_TYPES = ("STRING", "INT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("start_mode", "active_extensions", "audio_feather_ticks", "preview_mode", "source_audio_mode")
     FUNCTION = "select"
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
         "Workflow controller for the H3 AV Extension example. Its frontend companion applies real ComfyUI bypass mode to tagged groups; backend outputs drive lazy routing and the final streaming path."
     )
 
-    def select(self, start=START_EXISTING, active_extensions=1, audio_feather_ticks=8, previews=PREVIEW_ALL):
+    def select(
+        self, start=START_EXISTING, active_extensions=1, audio_feather_ticks=8,
+        previews=PREVIEW_ALL, source_audio=SOURCE_AUDIO_KEEP,
+    ):
         if str(start) == self.START_T2V:
             mode = "t2v"
         elif str(start) == self.START_I2V:
             mode = "i2v"
         else:
             mode = "existing_video"
+        source_audio_mode = (
+            "regenerate_h3"
+            if str(source_audio) == self.SOURCE_AUDIO_REGENERATE
+            else "keep_source"
+        )
         return (
             mode,
             max(1, min(6, int(active_extensions))),
             max(0, int(audio_feather_ticks)),
             str(previews),
+            source_audio_mode,
         )
+
+
+class MiniMaxH3AVStartModeParam:
+    """Cache-isolated execution parameter for the AV Extension start mode."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "start": ([
+                    MiniMaxH3AVExtensionController.START_EXISTING,
+                    MiniMaxH3AVExtensionController.START_T2V,
+                    MiniMaxH3AVExtensionController.START_I2V,
+                ], {"default": MiniMaxH3AVExtensionController.START_EXISTING}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("start_mode",)
+    FUNCTION = "select"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Internal cache-isolated AV Extension parameter. The frontend controller mirrors only "
+        "the Start widget here so unrelated controller changes cannot invalidate extension samplers."
+    )
+
+    def select(self, start=MiniMaxH3AVExtensionController.START_EXISTING):
+        if str(start) == MiniMaxH3AVExtensionController.START_T2V:
+            return ("t2v",)
+        if str(start) == MiniMaxH3AVExtensionController.START_I2V:
+            return ("i2v",)
+        return ("existing_video",)
+
+
+class MiniMaxH3AVSourceAudioModeParam:
+    """Cache-isolated execution parameter for the AV Extension source-audio policy."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source_audio": ([
+                    MiniMaxH3AVExtensionController.SOURCE_AUDIO_KEEP,
+                    MiniMaxH3AVExtensionController.SOURCE_AUDIO_REGENERATE,
+                ], {"default": MiniMaxH3AVExtensionController.SOURCE_AUDIO_KEEP}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("source_audio_mode",)
+    FUNCTION = "select"
+    CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Internal cache-isolated AV Extension parameter. The frontend controller mirrors only "
+        "the Source Audio widget here so unrelated controller changes cannot invalidate source audio."
+    )
+
+    def select(self, source_audio=MiniMaxH3AVExtensionController.SOURCE_AUDIO_KEEP):
+        if str(source_audio) == MiniMaxH3AVExtensionController.SOURCE_AUDIO_REGENERATE:
+            return ("regenerate_h3",)
+        return ("keep_source",)
 
 
 class MiniMaxH3ExtensionStartMode:
@@ -1550,11 +1691,16 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3ExistingVideoMaskedContext": MiniMaxH3ExistingVideoMaskedContext,
     "MiniMaxH3GeneratedAVMaskedContext": MiniMaxH3GeneratedAVMaskedContext,
     "MiniMaxH3StartMaskedContext": MiniMaxH3StartMaskedContext,
+    "MiniMaxH3FanRecoveredContext": MiniMaxH3FanRecoveredContext,
     "MiniMaxH3MaskedAVBridge": MiniMaxH3MaskedAVBridge,
     "MiniMaxH3SongMaskedAVContext": MiniMaxH3SongMaskedAVContext,
     "MiniMaxH3AssembleExtension": MiniMaxH3AssembleExtension,
+    "MiniMaxH3SourceAudioRegenLength": MiniMaxH3SourceAudioRegenLength,
+    "MiniMaxH3SourceAudioRegenMask": MiniMaxH3SourceAudioRegenMask,
+    "MiniMaxH3SourceAudioPolicy": MiniMaxH3SourceAudioPolicy,
     "MiniMaxH3StreamLiveExtensionAVToVHS": MiniMaxH3StreamLiveExtensionAVToVHS,
     "MiniMaxH3StreamLiveMusicVideoToVHS": MiniMaxH3StreamLiveMusicVideoToVHS,
+    "MiniMaxH3LastActiveVHSPreviewBarrier": MiniMaxH3LastActiveVHSPreviewBarrier,
     "MiniMaxH3FinalizeVHSOutput": MiniMaxH3FinalizeVHSOutput,
     "MiniMaxH3AssembleInterior": MiniMaxH3AssembleInterior,
     "MiniMaxH3SetAVNoiseMask": MiniMaxH3SetAVNoiseMask,
@@ -1563,9 +1709,12 @@ NODE_CLASS_MAPPINGS = {
     "MiniMaxH3StartCanvasSelector": MiniMaxH3StartCanvasSelector,
     "MiniMaxH3OptionalReferenceImage": MiniMaxH3OptionalReferenceImage,
     "MiniMaxH3AVExtensionController": MiniMaxH3AVExtensionController,
+    "MiniMaxH3AVStartModeParam": MiniMaxH3AVStartModeParam,
+    "MiniMaxH3AVSourceAudioModeParam": MiniMaxH3AVSourceAudioModeParam,
     "MiniMaxH3MusicVideoController": MiniMaxH3MusicVideoController,
     "MiniMaxH3ExtensionStartMode": MiniMaxH3ExtensionStartMode,
     "MiniMaxH3OptionalStartFrame": MiniMaxH3OptionalStartFrame,
+    "H3V2VGranularFractionalDenoise": H3V2VGranularFractionalDenoise,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3MotionContext": "H3 Motion Context",
@@ -1577,11 +1726,16 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3ExistingVideoMaskedContext": "H3 Existing Video Masked Context",
     "MiniMaxH3GeneratedAVMaskedContext": "H3 Generated AV Masked Context",
     "MiniMaxH3StartMaskedContext": "H3 Start Masked Context",
+    "MiniMaxH3FanRecoveredContext": "H3 Fan Recovered Context",
     "MiniMaxH3MaskedAVBridge": "H3 Masked AV Bridge",
     "MiniMaxH3SongMaskedAVContext": "H3 Song Audio + Masked Video Context",
     "MiniMaxH3AssembleExtension": "H3 Assemble Existing Video Extension",
-    "MiniMaxH3StreamLiveExtensionAVToVHS": "H3 Stream Final AV Extension to VHS",
+    "MiniMaxH3SourceAudioRegenLength": "H3 Source Audio Regen Length",
+    "MiniMaxH3SourceAudioRegenMask": "H3 Regenerate Complete Source Audio",
+    "MiniMaxH3SourceAudioPolicy": "H3 Source Audio Policy",
+    "MiniMaxH3StreamLiveExtensionAVToVHS": "H3 Stream AV Extensions to VHS",
     "MiniMaxH3StreamLiveMusicVideoToVHS": "H3 Stream Final Music Video to VHS",
+    "MiniMaxH3LastActiveVHSPreviewBarrier": "H3 Last Active VHS Preview Barrier",
     "MiniMaxH3FinalizeVHSOutput": "H3 Final Stream Output Sink",
     "MiniMaxH3AssembleInterior": "H3 Assemble Interior Insert",
     "MiniMaxH3SetAVNoiseMask": "H3 Set AV Noise Mask",
@@ -1590,7 +1744,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiniMaxH3StartCanvasSelector": "H3 Start Canvas Selector",
     "MiniMaxH3OptionalReferenceImage": "H3 Optional Reference Image",
     "MiniMaxH3AVExtensionController": "H3 AV Extension Controller",
+    "MiniMaxH3AVStartModeParam": "H3 AV Start Mode (Controller Internal)",
+    "MiniMaxH3AVSourceAudioModeParam": "H3 AV Source Audio Mode (Controller Internal)",
     "MiniMaxH3MusicVideoController": "H3 Music Video Controller",
     "MiniMaxH3ExtensionStartMode": "H3 Extension Start Mode",
     "MiniMaxH3OptionalStartFrame": "H3 Optional Starter First Frame",
+    "H3V2VGranularFractionalDenoise": "H3 V2V Granular Fractional Denoise",
 }

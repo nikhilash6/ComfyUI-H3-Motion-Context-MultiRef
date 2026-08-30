@@ -24,7 +24,7 @@ def _input(node, name):
 
 def test_live_extension_structure_is_checkpoint_free_and_ref2va_only():
     data = load(); types = [n['type'] for n in data['nodes']]
-    assert types.count('MiniMaxH3ReferenceToVideo') == 7  # starter + 6 extensions
+    assert types.count('MiniMaxH3ReferenceToVideo') == 8  # source-audio regen + starter + 6 extensions
     assert types.count('MiniMaxH3GeneratedAVMaskedContext') == 5
     assert types.count('MiniMaxH3StartMaskedContext') == 1
     assert types.count('MiniMaxH3AVExtensionController') == 1
@@ -44,12 +44,20 @@ def test_live_extension_structure_is_checkpoint_free_and_ref2va_only():
 def test_controller_defaults_and_backend_links():
     data=load(); nodes=_nodes(data); links=_links(data)
     c=next(n for n in nodes.values() if n['type']=='MiniMaxH3AVExtensionController')
-    assert c['widgets_values'] == ['Existing Video', 1, 8, 'All Active']
-    dest_types = {nodes[links[lid][3]]['type'] for lid in c['outputs'][0]['links']}
+    assert c['widgets_values'] == ['Existing Video', 1, 8, 'All Active', 'Keep source audio']
+    assert all(not (out.get('links') or []) for out in c['outputs'])
+    params = {
+        n.get('properties', {}).get('h3_av_param'): n
+        for n in nodes.values() if n.get('properties', {}).get('h3_av_param')
+    }
+    assert set(params) == {'start', 'active_extensions', 'audio_feather_ticks', 'source_audio'}
+    start = params['start']
+    dest_types = {nodes[links[lid][3]]['type'] for lid in start['outputs'][0]['links']}
     assert {'MiniMaxH3StartCanvasSelector','MiniMaxH3StartMaskedContext','MiniMaxH3StreamLiveExtensionAVToVHS'} <= dest_types
+    feather = params['audio_feather_ticks']
     for cid in [103,201,301,401,501,601]:
         lid=_input(nodes[cid],'audio_feather_ticks')['link']; l=links[lid]
-        assert l[1]==c['id'] and l[2]==2
+        assert l[1]==feather['id'] and l[2]==0
 
 
 def test_starter_is_reference_to_video_plus_frame1_keyframe():
@@ -78,8 +86,7 @@ def test_reference_images_feed_every_reference_to_video_node_directly():
 
 def test_optional_reference_audio_uses_one_reroute_per_slot_and_feeds_all_r2v():
     data=load(); nodes=_nodes(data); links=_links(data)
-    # Reference-audio LoadAudio/Reroute nodes intentionally keep default titles,
-    # so identify them by type and their graph role rather than display text.
+    # Identify optional reference-audio loaders/reroutes by type and graph role.
     loaders=sorted([n for n in nodes.values() if n['type']=='LoadAudio'], key=lambda n:n['id'])
     reroutes=sorted([n for n in nodes.values() if n['type']=='Reroute'], key=lambda n:n['id'])
     assert len(loaders)==2 and len(reroutes)==2
@@ -89,7 +96,7 @@ def test_optional_reference_audio_uses_one_reroute_per_slot_and_feeds_all_r2v():
         assert len(loader['outputs'][0]['links'])==1
         lr=links[loader['outputs'][0]['links'][0]]
         assert lr[3]==reroute['id']
-        assert len(reroute['outputs'][0]['links'])==7
+        assert len(reroute['outputs'][0]['links'])==8
     for n in nodes.values():
         if n['type']!='MiniMaxH3ReferenceToVideo': continue
         for name in ('ref_audios.ref_audio_0','ref_audios.ref_audio_1'):
@@ -136,10 +143,40 @@ def test_controller_managed_groups_have_single_ownership_and_matching_defaults()
     assert sum(m['role']=='starter_core' for m,_ in managed)==1
     assert sum(m['role']=='i2v_keyframe' for m,_ in managed)==1
     assert sum(m['role']=='source_video' for m,_ in managed)==1
+    assert sum(m['role']=='source_audio_regen' for m,_ in managed)==1
     for meta,members in managed:
         role=meta['role']; idx=meta.get('index')
         enabled = role=='source_video' or (role=='extension' and idx==1) or (role=='extension_preview' and idx==1)
         assert all(n.get('mode',0)==(0 if enabled else 4) for n in members)
+
+
+def test_existing_video_source_audio_uses_vhs_preview_without_vhs_audio_link():
+    data=load(); nodes=_nodes(data); links=_links(data)
+    source=nodes[99]
+    assert source['type'] == 'VHS_LoadVideo'
+    assert source['widgets_values']['force_rate'] == 24
+    assert source['outputs'][2]['name'] == 'audio'
+    assert not (source['outputs'][2].get('links') or [])
+    policy=next(n for n in nodes.values() if n['type']=='MiniMaxH3SourceAudioPolicy')
+    info_link=links[_input(policy,'video_info')['link']]
+    assert info_link[1:3] == [source['id'], 3]
+    assert info_link[4] == next(i for i,x in enumerate(policy['inputs']) if x['name']=='video_info')
+    assert 'source_audio' not in {i['name'] for i in policy['inputs']}
+    assert 'source_video' not in {i['name'] for i in policy['inputs']}
+
+
+def test_existing_video_full_h3_source_audio_regeneration_branch():
+    data=load(); nodes=_nodes(data); links=_links(data)
+    policy=next(n for n in nodes.values() if n['type']=='MiniMaxH3SourceAudioPolicy')
+    length=next(n for n in nodes.values() if n['type']=='MiniMaxH3SourceAudioRegenLength')
+    mask=next(n for n in nodes.values() if n['type']=='MiniMaxH3SourceAudioRegenMask')
+    regen_r2v=next(n for n in nodes.values() if n.get('title')=='Source Audio Regen - MiniMax H3 Reference to Video')
+    regen_sampler=next(n for n in nodes.values() if n.get('title')=='Source Audio Regen - SamplerCustomAdvanced')
+    assert links[_input(regen_r2v,'length')['link']][1] == length['id']
+    assert links[_input(mask,'latent')['link']][1] == regen_r2v['id']
+    assert links[_input(policy,'regenerated_latent')['link']][1] == regen_sampler['id']
+    regen_group=next(g for g in data['groups'] if (g.get('flags') or {}).get('h3_control',{}).get('role')=='source_audio_regen')
+    assert regen_group['flags']['h3_control']['controller']=='av_extension'
 
 
 def test_workflow_links_are_internally_consistent():

@@ -2356,7 +2356,7 @@
           ]
         }
       ],
-      "title": "CLIP 3 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 3 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },
@@ -3015,7 +3015,7 @@
           ]
         }
       ],
-      "title": "CLIP 4 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 4 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },
@@ -3604,7 +3604,7 @@
           ]
         }
       ],
-      "title": "CLIP 5 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 5 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },
@@ -4193,7 +4193,7 @@
           ]
         }
       ],
-      "title": "CLIP 6 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 6 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },
@@ -4804,7 +4804,7 @@
           ]
         }
       ],
-      "title": "CLIP 7 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 7 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },
@@ -6349,7 +6349,7 @@
           ]
         }
       ],
-      "title": "CLIP 2 — TRIM AUDIO / PREP VIDEO OVERLAP + MATCH AUDIO TAIL",
+      "title": "CLIP 2 — REMOVE AUDIO OVERLAP / PREP VIDEO CROSSFADE + CONFORM A/V TAIL",
       "properties": {
         "Node name for S&R": "MiniMaxH3MotionContextTrim"
       },

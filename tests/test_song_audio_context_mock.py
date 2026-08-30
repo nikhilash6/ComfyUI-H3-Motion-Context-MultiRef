@@ -4,6 +4,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
@@ -160,10 +161,10 @@ class FloorAudioVAE:
         return torch.ones((1, 32, 2, t), dtype=torch.float32) * 0.75
 
 
-def test_master_song_audio_124_frame_rounding_shortfall_is_grid_padded_not_rejected():
+def test_master_song_audio_124_frame_rounding_uses_exact_target_grid_pcm():
     # Native H3 target allocation: 124 / 24 * 40 = 206.666... -> 207 steps.
-    # A floor-style audio encoder fed only the exact picture duration would make
-    # 206 steps. The node must encode the full rounded audio-grid span instead.
+    # A floor-style wrapper fed only picture-duration PCM would make 206
+    # steps. The node must prepare the exact 207-cell PCM grid before encoding.
     video = torch.zeros((1, 24, 37, 2, 4))  # 37 video tokens cover 124 frames
     audio = torch.zeros((1, 32, 2, 207))
     latent = {"samples": NestedTensor((video, audio))}
@@ -217,3 +218,41 @@ def test_master_song_clip_audio_uses_absolute_timeline_sample_endpoints():
     expected = round((start_seconds + 362 / 24) * 32000) - round(start_seconds * 32000)
     assert expected == 482666
     assert clip_audio["waveform"].shape[-1] == expected
+
+
+class CenterCropAudioVAE:
+    audio_sample_rate = 32000
+    first_stage_model = SimpleNamespace(samples_per_latent=800)
+
+    def __init__(self):
+        self.last_input = None
+        self.last_crop_offset = None
+        self.first_sample = None
+
+    def encode(self, x):
+        length = int(x.shape[1])
+        self.last_input = length
+        self.last_crop_offset = (length % 800) // 2
+        self.first_sample = float(x[0, 0, 0])
+        cropped = (length // 800) * 800
+        return torch.ones((1, 32, 2, cropped // 800), dtype=torch.float32)
+
+
+def test_master_song_round_down_target_is_start_aligned_without_center_crop():
+    # 56 frames -> 93.333 audio ticks, so the H3 target owns 93 ticks.
+    video = torch.zeros((1, 24, 17, 2, 4))
+    audio = torch.zeros((1, 32, 2, 93))
+    latent = {"samples": NestedTensor((video, audio))}
+    start_seconds = 1.0
+    master = torch.arange(32000 * 10, dtype=torch.float32).reshape(1, 1, -1).repeat(1, 2, 1)
+    vae = CenterCropAudioVAE()
+
+    module.MiniMaxH3SongMaskedAVContext().prepare(
+        latent, vae, {"waveform": master, "sample_rate": 32000},
+        clip_start_seconds=start_seconds, context_length=0, source_fps=24.0,
+        crop="disabled", vae=None, source_frames=None,
+    )
+
+    assert vae.last_input == 93 * 800 == 74400
+    assert vae.last_crop_offset == 0
+    assert vae.first_sample == 32000.0
