@@ -226,9 +226,16 @@ Hard vs soft:
 
 Phase-0 vs interior positions: phase-0 positions (`1, 18, 35, 52, ...` in the default 1-based indexing mode; `0, 17, 34, 51, ...` in 0-based mode) map to the single still-token step (1 pinned frame). Interior positions map to the containing 4-frame latent step, pinning a static hold for up to 4 frames; the node logs the frame, the full pinned span, and the nearest phase-0 positions when this happens.
 
-Duplicate positions that resolve to the same latent step after quantization raise with both slot numbers named. The incoming latent must not already have a `noise_mask`; the node raises rather than silently clobbering an existing mask.
+Duplicate positions that resolve to the same latent step after quantization raise with both slot numbers named. If the incoming latent already carries a **nested H3 AV `noise_mask`**, the node preserves that mask and unions the new hard-keyframe protection into the video stream while leaving the audio mask unchanged. A hard keyframe may not claim a video latent step that is already protected (including fractional protection); that overlap raises with the keyframe position and latent step named. Plain/single-tensor masks are rejected with guidance to use the H3 AV mask utilities below.
+When combining this with `H3 Existing Video Masked Context`, put `H3 Custom Keyframes (Masked)` **after** the existing-video context node so it can merge into that node's AV mask.
 
 Both `H3 Custom Keyframes` and `H3 Custom Keyframes (Masked)` share the same JS keyframe-position widget.
+
+### H3 AV noise-mask utilities
+
+`H3 Set AV Noise Mask` and `H3 Clear AV Noise Mask` are the supported mask-editing utilities for MiniMax H3 AV latents. H3 carries separate video and audio mask streams inside a nested mask. **Do not use ComfyUI's stock `Set Latent Noise Mask` when you need to preserve H3 AV mask semantics**: a stock single-tensor mask can replace the nested structure, leaving the audio mask stream absent and causing audio that was meant to stay protected to regenerate.
+
+`H3 Set AV Noise Mask` accepts a video mask, an audio mask, or both. An omitted stream keeps the latent's existing H3 mask stream when present; otherwise it defaults to all-generate (all ones). `H3 Clear AV Noise Mask` removes the complete nested mask without changing latent samples, which is useful before rebuilding one or both streams deliberately.
 
 ---
 
@@ -814,7 +821,7 @@ The tests cover, among other things:
 - workflow JSON consistency;
 - `insert_frame` offsets: zero is byte-identical to the prefix path, non-multiples of 17 snap down to the grid, video/audio step ranges for inserts at 17, 51, 102 match hand-computed values;
 - `H3 Assemble Interior Insert`: frame count unchanged, audio samples match, splice interval equals canonical source, same CFR index map as the context node;
-- `H3 Custom Keyframes (Masked)`: frame-to-step mapping across all five phases, duplicate quantized steps raise, existing `noise_mask` raises, video mask zeros exactly at pinned steps, audio mask all-ones;
+- `H3 Custom Keyframes (Masked)`: frame-to-step mapping across all five phases, duplicate quantized steps raise, nested H3 AV masks merge on non-overlapping steps, protected-step overlaps raise, plain single-tensor masks are rejected, video mask zeros exactly at pinned steps, and upstream audio mask state is preserved;
 - the JS keyframe widget covering both keyframe node names.
 
 Run the standalone repository regressions with:

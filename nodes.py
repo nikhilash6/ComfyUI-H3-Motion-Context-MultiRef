@@ -1258,8 +1258,9 @@ class MiniMaxH3CustomKeyframesMasked:
         "Pinned positions must be phase-0 to pin exactly one frame: 1, 18, 35, 52, "
         "... in the default 1-based mode; 0, 17, 34, 51, ... in 0-based mode. "
         "Interior positions pin the full containing latent step (up to 4 "
-        "frames of static hold). Incoming latent must not already have a noise_mask. "
-        "Audio is not masked and will be generated freely."
+        "frames of static hold). Existing nested H3 AV masks are preserved and "
+        "merged; a keyframe may not overlap an already protected video step. "
+        "Audio mask state is preserved unchanged."
     )
 
     def apply(
@@ -1272,13 +1273,6 @@ class MiniMaxH3CustomKeyframesMasked:
         **kwargs,
     ):
         _require_h3_mask_support()
-
-        if "noise_mask" in latent:
-            raise ValueError(
-                "h3_motion_context: incoming latent already has a noise_mask. "
-                "MiniMaxH3CustomKeyframesMasked builds a fresh mask and would "
-                "silently clobber it. Mask merging is not yet supported."
-            )
 
         try:
             state = json.loads(keyframe_state or "{}")
@@ -1417,11 +1411,88 @@ class MiniMaxH3CustomKeyframesMasked:
 
         out_video = target_video_tensor.clone()
 
-        video_mask = torch.ones(
-            (1, 1, latent_t, int(target_video_tensor.shape[3]), int(target_video_tensor.shape[4])),
-            device=target_video_tensor.device,
-            dtype=torch.float32,
+        existing_noise_mask = latent.get("noise_mask")
+        existing_video_mask = None
+        existing_audio_mask = None
+        if existing_noise_mask is not None:
+            if hasattr(existing_noise_mask, "unbind"):
+                mask_parts = list(existing_noise_mask.unbind())
+            elif isinstance(existing_noise_mask, (tuple, list)):
+                mask_parts = list(existing_noise_mask)
+            else:
+                raise ValueError(
+                    "h3_motion_context: H3 Custom Keyframes (Masked) can only merge "
+                    "a nested H3 AV noise_mask. The incoming mask is a single tensor; "
+                    "use H3 Set AV Noise Mask to create a two-stream H3 mask, or H3 "
+                    "Clear AV Noise Mask before applying hard keyframes."
+                )
+            if target_audio_tensor is not None and len(mask_parts) < 2:
+                raise ValueError(
+                    "h3_motion_context: H3 Custom Keyframes (Masked) requires both "
+                    "video and audio streams when merging an H3 AV noise_mask. Use "
+                    "H3 Set AV Noise Mask or H3 Clear AV Noise Mask first."
+                )
+            if mask_parts:
+                existing_video_mask = mask_parts[0]
+            if len(mask_parts) > 1:
+                existing_audio_mask = mask_parts[1]
+
+        expected_video_mask_shape = (
+            1, 1, latent_t, int(target_video_tensor.shape[3]), int(target_video_tensor.shape[4])
         )
+        if existing_video_mask is not None:
+            if tuple(existing_video_mask.shape) != expected_video_mask_shape:
+                raise ValueError(
+                    "h3_motion_context: incoming H3 video noise-mask shape %s does "
+                    "not match target %s"
+                    % (tuple(existing_video_mask.shape), expected_video_mask_shape)
+                )
+            video_mask = existing_video_mask.to(
+                device=target_video_tensor.device, dtype=torch.float32
+            ).clone()
+        else:
+            video_mask = torch.ones(
+                expected_video_mask_shape,
+                device=target_video_tensor.device,
+                dtype=torch.float32,
+            )
+
+        if target_audio_tensor is not None:
+            expected_audio_mask_shape = (
+                1, 1, int(target_audio_tensor.shape[2]), int(target_audio_tensor.shape[3])
+            )
+            if existing_audio_mask is not None:
+                if tuple(existing_audio_mask.shape) != expected_audio_mask_shape:
+                    raise ValueError(
+                        "h3_motion_context: incoming H3 audio noise-mask shape %s does "
+                        "not match target %s"
+                        % (tuple(existing_audio_mask.shape), expected_audio_mask_shape)
+                    )
+                audio_mask = existing_audio_mask.to(
+                    device=target_audio_tensor.device, dtype=torch.float32
+                ).clone()
+            else:
+                audio_mask = torch.ones(
+                    expected_audio_mask_shape,
+                    device=target_audio_tensor.device,
+                    dtype=torch.float32,
+                )
+        else:
+            audio_mask = None
+
+        # Hard keyframes overwrite the latent value for their complete H3 video step.
+        # Refuse to overwrite any step that is already protected by an upstream mask;
+        # that would make two different preservation sources claim the same token.
+        for step_k, slot, image, pixel_index, step_start, step_span in anchors:
+            if bool((video_mask[:, :, step_k] < 1.0 - 1e-6).any()):
+                display_position = pixel_index + 1 if indexing == "1-based" else pixel_index
+                raise ValueError(
+                    "h3_motion_context: keyframe %d (position %d) maps to latent "
+                    "step %d, which is already protected by the incoming H3 video "
+                    "noise mask. Move the keyframe outside the protected insert/mask "
+                    "region or clear/change that mask first."
+                    % (slot, display_position, step_k)
+                )
 
         for step_k, slot, image, pixel_index, step_start, step_span in anchors:
             resized = _resize(image, width, height, crop)
@@ -1446,11 +1517,6 @@ class MiniMaxH3CustomKeyframesMasked:
 
         out = latent.copy()
         if target_audio_tensor is not None:
-            audio_mask = torch.ones(
-                (1, 1, int(target_audio_tensor.shape[2]), int(target_audio_tensor.shape[3])),
-                device=target_audio_tensor.device,
-                dtype=torch.float32,
-            )
             out["samples"] = comfy.nested_tensor.NestedTensor(
                 (out_video, target_audio_tensor.clone())
             )

@@ -113,13 +113,12 @@ def _install_nodes_mocks():
         sys.modules["update2pkg.h3_auto_crop32"] = ha
 
     if "update2pkg.h3_timing" not in sys.modules:
-        ht = types.ModuleType("update2pkg.h3_timing")
-        def _crossfade_plan(ctx, req):
-            n = max(0, int(ctx))
-            eff = min(n, max(0, int(req)))
-            return n - eff, eff
-        ht.crossfade_plan = _crossfade_plan
-        sys.modules["update2pkg.h3_timing"] = ht
+        spec = importlib.util.spec_from_file_location(
+            "update2pkg.h3_timing", ROOT / "h3_timing.py",
+        )
+        ht = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = ht
+        spec.loader.exec_module(ht)
 
     # Load existing_video_extension.py as the real package submodule.
     if "update2pkg.existing_video_extension" not in sys.modules:
@@ -260,22 +259,100 @@ def test_audio_mask_all_ones():
     assert float(am.min()) == 1.0, "Audio mask must be all-ones (generate everything)"
 
 
-def test_existing_noise_mask_raises():
+def test_existing_nested_av_mask_merges_without_clobbering_audio():
+    """A non-overlapping hard keyframe must union with an upstream H3 AV mask."""
     nodes = _load_nodes()
     _install_mocks()
     NT = sys.modules["comfy.nested_tensor"].NestedTensor
     latent = _make_av_latent()
-    latent["noise_mask"] = NT((torch.ones(1, 1, 42, 2, 4), torch.ones(1, 1, 2, 235)))
-    state = '{"count":1,"positions":[1]}'
+
+    existing_video = torch.ones(1, 1, 42, 2, 4)
+    existing_video[:, :, 0] = 0.0  # e.g. protected existing-video insert/prefix
+    existing_audio = torch.ones(1, 1, 2, 235)
+    existing_audio[..., :65] = 0.0
+    latent["noise_mask"] = NT((existing_video, existing_audio))
+
+    # 1-based position 18 -> video latent step 5, outside protected step 0.
+    state = '{"count":1,"positions":[18]}'
+    out_latent, = nodes.MiniMaxH3CustomKeyframesMasked().apply(
+        latent, _StillVAE(), state, "1-based", "disabled",
+        keyframe_image_1=_make_image(),
+    )
+
+    vm, am = out_latent["noise_mask"].unbind()
+    assert float(vm[:, :, 0].max()) == 0.0, "upstream protected step must survive"
+    assert float(vm[:, :, 5].max()) == 0.0, "new hard-keyframe step must be added"
+    assert float(vm[:, :, 6].min()) == 1.0, "unrelated generate steps must stay unchanged"
+    assert torch.equal(am, existing_audio), "hard keyframes must preserve upstream audio mask exactly"
+    # Input mask must not be mutated in place.
+    assert float(existing_video[:, :, 5].min()) == 1.0
+
+
+def test_existing_protected_step_overlap_raises_before_encoding():
+    """Two preservation sources may not claim the same H3 video token."""
+    nodes = _load_nodes()
+    _install_mocks()
+    NT = sys.modules["comfy.nested_tensor"].NestedTensor
+    latent = _make_av_latent()
+    existing_video = torch.ones(1, 1, 42, 2, 4)
+    existing_video[:, :, 5] = 0.0
+    existing_audio = torch.ones(1, 1, 2, 235)
+    latent["noise_mask"] = NT((existing_video, existing_audio))
+
+    class MustNotEncodeVAE:
+        def encode(self, frames):
+            raise AssertionError("overlap must be rejected before VAE encoding")
+
+    state = '{"count":1,"positions":[18]}'  # step 5
+    try:
+        nodes.MiniMaxH3CustomKeyframesMasked().apply(
+            latent, MustNotEncodeVAE(), state, "1-based", "disabled",
+            keyframe_image_1=_make_image(),
+        )
+        assert False, "Expected ValueError for overlapping protected step"
+    except ValueError as e:
+        msg = str(e).lower()
+        assert "already protected" in msg
+        assert "position 18" in msg
+        assert "step 5" in msg
+
+
+def test_fractionally_protected_step_also_counts_as_overlap():
+    nodes = _load_nodes()
+    _install_mocks()
+    NT = sys.modules["comfy.nested_tensor"].NestedTensor
+    latent = _make_av_latent()
+    existing_video = torch.ones(1, 1, 42, 2, 4)
+    existing_video[:, :, 5] = 0.5
+    latent["noise_mask"] = NT((existing_video, torch.ones(1, 1, 2, 235)))
+    state = '{"count":1,"positions":[18]}'
 
     try:
         nodes.MiniMaxH3CustomKeyframesMasked().apply(
             latent, _StillVAE(), state, "1-based", "disabled",
             keyframe_image_1=_make_image(),
         )
-        assert False, "Expected ValueError for existing noise_mask"
+        assert False, "Expected ValueError for fractional protected-step overlap"
     except ValueError as e:
-        assert "noise_mask" in str(e).lower()
+        assert "already protected" in str(e).lower()
+
+
+def test_plain_single_tensor_noise_mask_rejected_with_h3_guidance():
+    nodes = _load_nodes()
+    latent = _make_av_latent()
+    latent["noise_mask"] = torch.ones(1, 1, 42, 2, 4)
+    state = '{"count":1,"positions":[18]}'
+
+    try:
+        nodes.MiniMaxH3CustomKeyframesMasked().apply(
+            latent, _StillVAE(), state, "1-based", "disabled",
+            keyframe_image_1=_make_image(),
+        )
+        assert False, "Expected ValueError for stock/plain single-stream noise mask"
+    except ValueError as e:
+        msg = str(e)
+        assert "H3 Set AV Noise Mask" in msg
+        assert "H3 Clear AV Noise Mask" in msg
 
 
 def test_duplicate_step_after_quantization_raises():

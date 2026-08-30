@@ -78,14 +78,10 @@ def test_reference_images_feed_every_reference_to_video_node_directly():
 
 def test_optional_reference_audio_uses_one_reroute_per_slot_and_feeds_all_r2v():
     data=load(); nodes=_nodes(data); links=_links(data)
-    loaders=sorted(
-        [n for n in nodes.values() if n['type']=='LoadAudio' and n.get('title','').startswith('REFERENCE AUDIO ')],
-        key=lambda n:n['title'],
-    )
-    reroutes=sorted(
-        [n for n in nodes.values() if n['type']=='Reroute' and n.get('title','').startswith('REFERENCE AUDIO ')],
-        key=lambda n:n['title'],
-    )
+    # Reference-audio LoadAudio/Reroute nodes intentionally keep default titles,
+    # so identify them by type and their graph role rather than display text.
+    loaders=sorted([n for n in nodes.values() if n['type']=='LoadAudio'], key=lambda n:n['id'])
+    reroutes=sorted([n for n in nodes.values() if n['type']=='Reroute'], key=lambda n:n['id'])
     assert len(loaders)==2 and len(reroutes)==2
     assert all(n.get('mode')==4 for n in loaders)
     assert all(n['widgets_values'][0]=='' for n in loaders)

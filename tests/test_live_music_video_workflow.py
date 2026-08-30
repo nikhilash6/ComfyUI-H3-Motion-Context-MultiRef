@@ -66,8 +66,12 @@ def test_music_controller_defaults_and_group_ownership():
 
 def test_four_global_images_feed_all_twenty_ref2va_nodes():
     data = load(); nodes = _nodes(data); links = _links(data)
-    refs = [n for n in nodes.values() if n["type"] == "LoadImage" and n.get("title", "").startswith("REFERENCE IMAGE ")]
+    # These reference LoadImage nodes intentionally use their default titles in
+    # the serialized workflow, so identify them by node type/graph role rather
+    # than optional display-title text.
+    refs = [n for n in nodes.values() if n["type"] == "LoadImage"]
     assert len(refs) == 4
+    assert {n["id"] for n in refs} == {910, 911, 2505, 2506}
     active = [n for n in refs if n.get("mode", 0) == 0]
     bypass = [n for n in refs if n.get("mode", 0) == 4]
     assert len(active) == 2 and len(bypass) == 2
@@ -85,13 +89,25 @@ def test_each_continuation_uses_previous_sampler_latent_directly():
         [n for n in nodes.values() if n["type"] == "SamplerCustomAdvanced"],
         key=lambda n: int(n.get("title", "Clip 0 Sampler").split()[1]),
     )
-    contexts = sorted(
-        [n for n in nodes.values() if n["type"] == "MiniMaxH3SongMaskedAVContext"],
-        key=lambda n: int(n.get("title", "CLIP 0").split()[1]),
-    )
-    assert len(samplers) == len(contexts) == 20
+    assert len(samplers) == 20
+
+    # The SongMaskedAVContext nodes intentionally have no titles, so derive the
+    # context for each clip from the sampler's actual latent_image connection
+    # instead of relying on node insertion order. This keeps the regression tied
+    # to the graph relationship it is meant to verify.
+    contexts = []
+    for sampler in samplers:
+        latent_link = _input(sampler, "latent_image")["link"]
+        assert latent_link is not None
+        context = nodes[links[latent_link][1]]
+        assert context["type"] == "MiniMaxH3SongMaskedAVContext"
+        contexts.append(context)
+
+    assert _input(contexts[0], "source_latent")["link"] is None
     for i in range(1, 20):
-        source = links[_input(contexts[i], "source_latent")["link"]][1]
+        source_link = _input(contexts[i], "source_latent")["link"]
+        assert source_link is not None
+        source = links[source_link][1]
         assert source == samplers[i - 1]["id"]
 
 
@@ -233,12 +249,29 @@ def test_music_preview_scheduler_topology_prioritizes_each_clip_preview_before_f
     sink_block = stream_src.split("class MiniMaxH3FinalizeVHSOutput:", 1)[1].split("class MiniMaxH3StreamLiveMusicVideoToVHS:", 1)[0]
     assert "OUTPUT_NODE = True" in sink_block
 
+    # Identify each sampler from the final stream's clip_N input rather than
+    # relying on optional/custom node titles. Then prove the corresponding
+    # preview decode is fed by that sampler.
+    previews = [n for n in nodes.values() if n["type"] == "VHS_VideoCombine"]
     for i in range(1, 7):
-        sampler = next(n for n in nodes.values() if n.get("title") == f"Clip {i} Sampler")
-        decode = next(n for n in nodes.values() if n.get("title") == f"PREVIEW — CLIP {i} — VIDEO DECODE")
-        preview = next(n for n in nodes.values() if n.get("title") == f"Clip {i} — VHS Video Combine")
-        assert links[_input(decode, "samples")["link"]][1] == sampler["id"]
-        assert links[_input(preview, "images")["link"]][1] == decode["id"]
+        clip_link = _input(final, f"clip_{i}")["link"]
+        assert clip_link is not None
+        sampler = nodes[links[clip_link][1]]
+        assert sampler["type"] == "SamplerCustomAdvanced"
+
+        matching_previews = []
+        for preview in previews:
+            images_link = _input(preview, "images")["link"]
+            if images_link is None:
+                continue
+            decode = nodes[links[images_link][1]]
+            if decode["type"] != "VAEDecode":
+                continue
+            samples_link = _input(decode, "samples")["link"]
+            if samples_link is not None and links[samples_link][1] == sampler["id"]:
+                matching_previews.append(preview)
+
+        assert len(matching_previews) == 1
 
 
 def test_bundled_six_clip_demo_prompts_do_not_invent_ref_audio_label():

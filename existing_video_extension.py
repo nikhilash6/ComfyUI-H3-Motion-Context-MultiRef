@@ -420,7 +420,7 @@ class MiniMaxH3ExistingVideoMaskedContext:
     OUTPUT_TOOLTIPS = (
         "Target AV latent with the preserved source segment written in and a denoise mask applied. Connect to the H3 sampler.",
         "Frames to trim from the start of the generated output. Equals preserved_frames for prefix inserts (insert_frame=0); 0 for interior inserts. Wire to H3 Assemble Existing Video Extension.",
-        "Actual insert position used after snapping to the nearest multiple of 17. Wire to H3 Assemble Interior Insert.",
+        "Actual insert position used after snapping DOWN to the nearest multiple of 17. Wire to H3 Assemble Interior Insert.",
         "Number of source frames preserved in the latent. Wire to H3 Assemble Interior Insert.",
     )
     FUNCTION = "prepare"
@@ -738,6 +738,12 @@ class MiniMaxH3SetAVNoiseMask:
     RETURN_NAMES = ("latent",)
     FUNCTION = "set_mask"
     CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Set video and/or audio denoise masks on a MiniMax H3 AV latent using the "
+        "required two-stream NestedTensor format. Use this instead of ComfyUI's "
+        "stock Set Latent Noise Mask for H3 AV latents; a stock single-tensor mask "
+        "can drop the audio mask stream and unintentionally regenerate protected audio."
+    )
 
     def set_mask(self, latent, video_mask=None, audio_mask=None):
         if video_mask is None and audio_mask is None:
@@ -807,6 +813,11 @@ class MiniMaxH3ClearAVNoiseMask:
     RETURN_NAMES = ("latent",)
     FUNCTION = "clear_mask"
     CATEGORY = "conditioning/minimax"
+    DESCRIPTION = (
+        "Remove the complete nested H3 AV noise mask without changing latent samples. "
+        "Use this H3-aware node when clearing masks before H3 AV sampling or before "
+        "rebuilding only one mask stream with H3 Set AV Noise Mask."
+    )
 
     def clear_mask(self, latent):
         out = latent.copy()
