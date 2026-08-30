@@ -80,11 +80,21 @@ function ensureImageInput(node, i) {
 
 function ensurePositionInput(node, i) {
     const name = positionInputName(i);
-    if (findInput(node, name) >= 0) return;
+    if (findInput(node, name) < 0) {
+        node.addInput(name, "INT", {
+            label: `keyframe ${i} position`,
+        });
+    }
 
-    node.addInput(name, "INT", {
-        label: `keyframe ${i} position`,
-    });
+    // Tell LiteGraph/ComfyUI that this socket belongs to the existing
+    // number widget. Current ComfyUI renders widget-backed sockets on the
+    // widget row instead of as a separate input row.
+    const slot = findInput(node, name);
+    const input = node.inputs?.[slot];
+    const widget = findPositionWidget(node, i);
+    if (input && widget) {
+        input.widget = { name: widget.name };
+    }
 }
 
 function removeImageInput(node, i) {
@@ -205,12 +215,12 @@ function ensureButtons(node) {
 
             node._h3CustomKeyframeCount = i;
             ensureImageInput(node, i);
-            ensurePositionInput(node, i);
             ensurePositionWidget(
                 node,
                 i,
                 previous + 17,
             );
+            ensurePositionInput(node, i);
             writeState(node);
             refreshNode(node);
         },
@@ -311,12 +321,12 @@ function buildUI(node) {
 
     for (let i = 1; i <= state.count; i++) {
         ensureImageInput(node, i);
-        ensurePositionInput(node, i);
         ensurePositionWidget(
             node,
             i,
             state.positions[i - 1],
         );
+        ensurePositionInput(node, i);
     }
 
     ensureButtons(node);
@@ -344,7 +354,10 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function () {
             const result =
                 originalConfigure?.apply(this, arguments);
-            setTimeout(() => buildUI(this), 0);
+            // Build synchronously on workflow load so ComfyUI's subsequent
+            // widget-input reconciliation sees the dynamic widget referenced
+            // by each serialized input slot and preserves connected links.
+            buildUI(this);
             return result;
         };
     },

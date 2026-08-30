@@ -35,3 +35,20 @@ def test_dynamic_keyframe_positions_have_int_sockets():
     assert 'node.addInput(name, "INT"' in js_text
     assert 'ensurePositionInput(node, i);' in js_text
     assert 'removePositionInput(node, i);' in js_text
+
+
+def test_position_socket_is_bound_to_position_widget_row():
+    js_text = (ROOT / "js" / "h3_custom_keyframes.js").read_text()
+
+    assert "input.widget = { name: widget.name };" in js_text
+    assert "const widget = findPositionWidget(node, i);" in js_text
+    assert "ensurePositionWidget(" in js_text
+    assert "ensurePositionInput(node, i);" in js_text
+
+
+def test_configure_builds_dynamic_widget_inputs_synchronously():
+    js_text = (ROOT / "js" / "h3_custom_keyframes.js").read_text()
+    configure = js_text.split("nodeType.prototype.onConfigure = function () {", 1)[1]
+    configure = configure.split("};", 1)[0]
+    assert "buildUI(this);" in configure
+    assert "setTimeout(() => buildUI(this), 0);" not in configure
