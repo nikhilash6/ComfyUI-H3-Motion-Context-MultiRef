@@ -433,7 +433,7 @@ def _assemble_av_audio(
 def _vhs_h264_inputs(filename_default, trim_default):
     return {
         "filename_prefix": ("STRING", {"default": filename_default}),
-        "pix_fmt": (["yuv420p", "yuv420p10le"], {"default": "yuv420p"}),
+        "pix_fmt": (["yuv420p", "yuv420p10le", "lossless_ffv1"], {"default": "yuv420p"}),
         "crf": ("INT", {"default": 19, "min": 0, "max": 100, "step": 1}),
         "save_metadata": ("BOOLEAN", {"default": False}),
         "trim_to_audio": ("BOOLEAN", {"default": bool(trim_default)}),
@@ -462,19 +462,28 @@ def _run_vhs_h264(
     # advances its numeric counter for repeated runs using the same prefix.
     # Keeping that responsibility here would risk reintroducing the historical
     # bug where each run overwrote the previous final video.
+    # Keep the existing H.264 path as the default. ``lossless_ffv1`` is a
+    # sentinel in the existing pix_fmt widget so old workflow widget ordering
+    # and serialized defaults remain unchanged. VHS's built-in FFV1 MKV format
+    # supplies its own codec defaults; rgba64le preserves RGB at 16-bit input
+    # depth and FLAC is used for audio by that format.
+    lossless = str(pix_fmt) == "lossless_ffv1"
+    output_format = "video/ffv1-mkv" if lossless else "video/h264-mp4"
+    output_pix_fmt = "rgba64le" if lossless else str(pix_fmt)
+
     result = vhs.combine_video(
         frame_rate=24,
         loop_count=0,
         images=frames,
         filename_prefix=str(filename_prefix),
-        format="video/h264-mp4",
+        format=output_format,
         pingpong=False,
         save_output=bool(save_output),
         prompt=prompt,
         extra_pnginfo=extra_pnginfo,
         audio=audio,
         unique_id=unique_id,
-        pix_fmt=str(pix_fmt),
+        pix_fmt=output_pix_fmt,
         crf=int(crf),
         save_metadata=bool(save_metadata),
         trim_to_audio=bool(trim_to_audio),
@@ -502,7 +511,7 @@ def _run_vhs_h264(
 
 
 class MiniMaxH3StreamLiveExtensionAVToVHS:
-    """Stream a modular AV Extension timeline directly into VHS H.264 MP4.
+    """Stream a modular AV Extension timeline directly into VHS video output.
 
     The frontend exposes a user-selected number of ``extension_N`` sockets.
     Backend support is deliberately wider than the shipped six-extension
@@ -597,7 +606,7 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
         "Modular low-RAM AV Extension final output. Set Input Count and click "
         "Update inputs to expose as many extension latent sockets as needed. "
         "Disconnected sockets are skipped. Clips are decoded one at a time and "
-        "streamed directly into VHS H.264 without materializing the full RGB movie."
+        "streamed directly into VHS without materializing the full RGB movie."
     )
 
     @classmethod
@@ -950,7 +959,7 @@ class MiniMaxH3FinalizeVHSOutput:
 
 
 class MiniMaxH3StreamLiveMusicVideoToVHS:
-    """Stream a modular Music Video timeline directly into VHS H.264 MP4."""
+    """Stream a modular Music Video timeline directly into VHS video output."""
 
     MAX_CLIPS = 64
     DEFAULT_CLIP_INPUTS = 20
