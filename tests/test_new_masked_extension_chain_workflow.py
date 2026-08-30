@@ -150,11 +150,17 @@ def test_controller_managed_groups_have_single_ownership_and_matching_defaults()
         assert all(n.get('mode',0)==(0 if enabled else 4) for n in members)
 
 
-def test_existing_video_source_audio_uses_vhs_preview_without_vhs_audio_link():
+def test_existing_video_source_audio_uses_vhs_ffmpeg_preview_without_vhs_audio_link():
     data=load(); nodes=_nodes(data); links=_links(data)
     source=nodes[99]
-    assert source['type'] == 'VHS_LoadVideo'
+    assert source['type'] == 'VHS_LoadVideoFFmpeg'
+    assert source['properties']['Node name for S&R'] == 'VHS_LoadVideoFFmpeg'
     assert source['widgets_values']['force_rate'] == 24
+    assert source['widgets_values']['start_time'] == 0
+    assert 'skip_first_frames' not in source['widgets_values']
+    assert 'select_every_nth' not in source['widgets_values']
+    assert source['outputs'][1]['name'] == 'mask'
+    assert source['outputs'][1]['type'] == 'MASK'
     assert source['outputs'][2]['name'] == 'audio'
     assert not (source['outputs'][2].get('links') or [])
     policy=next(n for n in nodes.values() if n['type']=='MiniMaxH3SourceAudioPolicy')

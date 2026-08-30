@@ -465,11 +465,12 @@ def _run_vhs_h264(
     # Keep the existing H.264 path as the default. ``lossless_ffv1`` is a
     # sentinel in the existing pix_fmt widget so old workflow widget ordering
     # and serialized defaults remain unchanged. VHS's built-in FFV1 MKV format
-    # supplies its own codec defaults; rgba64le preserves RGB at 16-bit input
-    # depth and FLAC is used for audio by that format.
+    # supplies its own codec defaults; rgb48le keeps our 3-channel H3 frames in
+    # 16-bit RGB without introducing an unnecessary alpha plane. FLAC is used
+    # for audio by that format.
     lossless = str(pix_fmt) == "lossless_ffv1"
     output_format = "video/ffv1-mkv" if lossless else "video/h264-mp4"
-    output_pix_fmt = "rgba64le" if lossless else str(pix_fmt)
+    output_pix_fmt = "rgb48le" if lossless else str(pix_fmt)
 
     result = vhs.combine_video(
         frame_rate=24,

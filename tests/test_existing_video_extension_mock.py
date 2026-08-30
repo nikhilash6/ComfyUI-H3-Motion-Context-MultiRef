@@ -422,6 +422,21 @@ def test_source_audio_policy_honors_vhs_skip_as_audio_seek():
     assert abs(source["start_seconds"] - 1.0) < 1e-9
 
 
+def test_source_audio_policy_honors_vhs_ffmpeg_start_time_as_audio_seek():
+    prompt = {
+        "p": {"class_type": "MiniMaxH3SourceAudioPolicy", "inputs": {"video_info": ["v", 3]}},
+        "v": {"class_type": "VHS_LoadVideoFFmpeg", "inputs": {
+            "video": "clip.mp4", "force_rate": 24, "start_time": 12.345,
+        }},
+    }
+    info = {"source_fps": 30.0, "loaded_fps": 24.0}
+    source = module._vhs_source_from_prompt(prompt, "p", info)
+    assert source["video"] == "clip.mp4"
+    assert source["loader_type"] == "VHS_LoadVideoFFmpeg"
+    assert source["select_every_nth"] == 1
+    assert abs(source["start_seconds"] - 12.345) < 1e-9
+
+
 def test_fan_recovered_context_repairs_smear_and_returns_dynamic_native_guide():
     target = torch.zeros((12, 2, 3, 3), dtype=torch.float32)
     source = torch.stack([

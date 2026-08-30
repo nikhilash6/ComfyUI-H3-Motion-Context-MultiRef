@@ -4220,7 +4220,7 @@
     },
     {
       "id": 99,
-      "type": "VHS_LoadVideo",
+      "type": "VHS_LoadVideoFFmpeg",
       "pos": [
         -3142.751416934774,
         -447.5430185519721
@@ -4255,8 +4255,8 @@
           ]
         },
         {
-          "name": "frame_count",
-          "type": "INT",
+          "name": "mask",
+          "type": "MASK",
           "links": null
         },
         {
@@ -4275,7 +4275,7 @@
       "properties": {
         "cnr_id": "comfyui-videohelpersuite",
         "ver": "4ee72c065db22c9d96c2427954dc69e7b908444b",
-        "Node name for S&R": "VHS_LoadVideo"
+        "Node name for S&R": "VHS_LoadVideoFFmpeg"
       },
       "widgets_values": {
         "video": "",
@@ -4283,8 +4283,7 @@
         "custom_width": 0,
         "custom_height": 0,
         "frame_load_cap": 0,
-        "skip_first_frames": 0,
-        "select_every_nth": 1,
+        "start_time": 0,
         "format": "AnimateDiff",
         "videopreview": {
           "hidden": false,
@@ -4299,8 +4298,7 @@
         "custom_width": 0,
         "custom_height": 0,
         "frame_load_cap": 0,
-        "skip_first_frames": 0,
-        "select_every_nth": 1,
+        "start_time": 0,
         "format": "AnimateDiff",
         "choose video to upload": null,
         "videopreview": {

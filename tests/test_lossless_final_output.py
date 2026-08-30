@@ -73,11 +73,11 @@ def test_existing_h264_output_path_is_unchanged():
     assert result["ui"]["images"][0]["filename"].endswith(".mp4")
 
 
-def test_lossless_choice_selects_builtin_ffv1_mkv_with_16bit_rgb_preserving_pix_fmt():
+def test_lossless_choice_selects_builtin_ffv1_mkv_with_16bit_rgb_without_alpha():
     module = _load_stream_module()
     call, result = _run(module, "lossless_ffv1")
     assert call["format"] == "video/ffv1-mkv"
-    assert call["pix_fmt"] == "rgba64le"
+    assert call["pix_fmt"] == "rgb48le"
     # CRF remains in the stable wrapper signature/widget layout. VHS ignores it
     # for FFV1 because the ffv1-mkv format has no CRF format widget.
     assert call["crf"] == 19
