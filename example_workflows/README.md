@@ -100,7 +100,7 @@ Use the included references or replace them with your own.
 **Master Song**
 The song used by the workflow. Replace it with your own audio when starting a new project.
 
-The workflow contains up to 20 clip sections. Only the number selected by **Active Clips** is used. Changing that count does not alter existing clip-sampler inputs, so cached clips can be reused while newly activated continuation clips are generated. The final streamer also supports a standalone dynamic **Input Count / Update inputs** interface; Music Video clip connections must remain a contiguous prefix so their visuals stay aligned to the master-song timeline.
+The workflow contains up to 20 clip sections. Only the number selected by **Active Clips** is used. Changing that count does not alter existing clip-sampler inputs, so cached clips can be reused while newly activated continuation clips are generated. The final streamer and last-active preview barrier both support a standalone dynamic **Input Count / Update inputs** interface; Music Video clip connections must remain a contiguous prefix so their visuals stay aligned to the master-song timeline.
 
 ---
 
@@ -124,7 +124,7 @@ Choose whether the workflow begins with an existing video or generates the first
 
 Set **Active Extensions** to the number of continuation sections you want to run. The bundled controller automatically enables the required managed extension groups and bypasses the inactive ones; no manual group-enabling order is required.
 
-The final **H3 Stream AV Extensions to VHS** node can also be reused in custom workflows. Set **Input Count**, click **Update inputs**, and connect any number of extension latents up to the configured count. Disconnected sockets are skipped. The optional `active_extensions` input is only a cap; leave it disconnected when using the node outside the bundled controller workflow. The bundled graph also routes the enabled per-extension VHS previews through a last-active preview barrier, so the highest enabled preview completes before the final stream starts. Its terminal sink is optional-input/bypass-safe.
+The final **H3 Stream AV Extensions to VHS** node can also be reused in custom workflows. Set **Input Count**, click **Update inputs**, and connect any number of extension latents up to the configured count. Disconnected sockets are skipped. The optional `active_extensions` input is only a cap; leave it disconnected when using the node outside the bundled controller workflow. The bundled graph also routes the enabled per-extension VHS previews through a last-active preview barrier. The barrier has its own **Input Count / Update inputs** control, so only the preview sockets you need are shown; the highest enabled preview completes before the final stream starts. Its terminal sink is optional-input/bypass-safe.
 
 ### References
 

@@ -824,42 +824,73 @@ class MiniMaxH3StreamLiveExtensionAVToVHS:
 class MiniMaxH3LastActiveVHSPreviewBarrier:
     """Resolve the highest enabled VHS preview before final output.
 
-    Preview inputs are lazy. Only the highest connected preview at or below the
-    optional controller cap is requested, so both AV Extension and Music Video
-    can guarantee that the last active preview finishes before final assembly.
-    If preview groups are disabled, the barrier is an immediate no-op.
+    Preview inputs are lazy and frontend-modular. Only the configured number of
+    ``preview_N`` sockets is shown, while the backend still accepts a wider range
+    for saved/custom workflows. The highest connected preview at or below both
+    the configured count and optional controller cap is requested.
     """
 
     MAX_PREVIEWS = 64
+    DEFAULT_PREVIEW_INPUTS = 6
 
     @classmethod
     def INPUT_TYPES(cls):
+        required = {
+            "input_count": (
+                "INT",
+                {
+                    "default": cls.DEFAULT_PREVIEW_INPUTS,
+                    "min": 1,
+                    "max": cls.MAX_PREVIEWS,
+                    "step": 1,
+                    "tooltip": (
+                        "Number of preview sockets shown by the node. "
+                        "Set this value, then click Update inputs."
+                    ),
+                },
+            ),
+        }
         optional = {
             "active_extensions": ("INT", {"forceInput": True}),
             "active_clips": ("INT", {"forceInput": True}),
         }
+        # The browser extension hides sockets above input_count. Declaring the
+        # full supported range keeps old/saved workflows backend-compatible.
         for i in range(1, cls.MAX_PREVIEWS + 1):
             optional[f"preview_{i}"] = ("VHS_FILENAMES", {"lazy": True})
-        return {"optional": optional}
+        return {"required": required, "optional": optional}
 
     RETURN_TYPES = ("VHS_FILENAMES",)
     RETURN_NAMES = ("preview_gate",)
     FUNCTION = "select"
     CATEGORY = "conditioning/minimax"
     DESCRIPTION = (
-        "Execution-order barrier for H3 workflows. It waits for the highest "
-        "enabled VHS preview before final assembly."
+        "Execution-order barrier for H3 workflows. Set Input Count and click "
+        "Update inputs to show only the preview sockets you need. It waits for "
+        "the highest enabled VHS preview before final assembly."
     )
 
     @classmethod
-    def _limit(cls, active_extensions=None, active_clips=None):
+    def _limit(
+        cls,
+        input_count=DEFAULT_PREVIEW_INPUTS,
+        active_extensions=None,
+        active_clips=None,
+    ):
+        configured = max(1, min(cls.MAX_PREVIEWS, int(input_count)))
         active = active_clips if active_clips is not None else active_extensions
         if active is None:
-            return cls.MAX_PREVIEWS
-        return max(0, min(cls.MAX_PREVIEWS, int(active)))
+            return configured
+        return min(configured, max(0, int(active)))
 
-    def check_lazy_status(self, active_extensions=None, active_clips=None, **kwargs):
-        limit = self._limit(active_extensions, active_clips)
+    def check_lazy_status(
+        self,
+        input_count=DEFAULT_PREVIEW_INPUTS,
+        active_extensions=None,
+        active_clips=None,
+        **kwargs,
+    ):
+        limit = self._limit(input_count, active_extensions, active_clips)
         for i in range(limit, 0, -1):
             name = f"preview_{i}"
             # Disconnected optional sockets are absent. A connected lazy preview
@@ -868,8 +899,14 @@ class MiniMaxH3LastActiveVHSPreviewBarrier:
                 return [name] if kwargs[name] is None else []
         return []
 
-    def select(self, active_extensions=None, active_clips=None, **kwargs):
-        limit = self._limit(active_extensions, active_clips)
+    def select(
+        self,
+        input_count=DEFAULT_PREVIEW_INPUTS,
+        active_extensions=None,
+        active_clips=None,
+        **kwargs,
+    ):
+        limit = self._limit(input_count, active_extensions, active_clips)
         for i in range(limit, 0, -1):
             value = kwargs.get(f"preview_{i}")
             if value is not None:

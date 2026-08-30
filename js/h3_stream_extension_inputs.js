@@ -5,11 +5,20 @@ const SPECS = {
         prefix: "extension_",
         maxInputs: 64,
         defaultInputs: 6,
+        socketType: "LATENT",
     },
     MiniMaxH3StreamLiveMusicVideoToVHS: {
         prefix: "clip_",
         maxInputs: 64,
         defaultInputs: 20,
+        socketType: "LATENT",
+    },
+    MiniMaxH3LastActiveVHSPreviewBarrier: {
+        prefix: "preview_",
+        maxInputs: 64,
+        defaultInputs: 6,
+        socketType: "VHS_FILENAMES",
+        inferLegacyInputCount: true,
     },
 };
 
@@ -26,6 +35,27 @@ function desiredInputCount(node, spec) {
     const raw = Number(inputCountWidget(node)?.value ?? spec.defaultInputs);
     if (!Number.isFinite(raw)) return spec.defaultInputs;
     return Math.max(1, Math.min(spec.maxInputs, Math.trunc(raw)));
+}
+
+function highestSerializedDynamicInput(info, spec) {
+    let highest = 0;
+    for (const input of info?.inputs ?? []) {
+        const n = dynamicNumber(input, spec);
+        if (n != null) highest = Math.max(highest, n);
+    }
+    return highest || null;
+}
+
+function hasSerializedInputCount(info) {
+    if (info?.widgets_values_named?.input_count != null) return true;
+    return Array.isArray(info?.widgets_values) && info.widgets_values.length > 0;
+}
+
+function restoreLegacyInputCount(node, info, spec) {
+    if (!spec?.inferLegacyInputCount || hasSerializedInputCount(info)) return;
+    const inferred = highestSerializedDynamicInput(info, spec);
+    const widget = inputCountWidget(node);
+    if (widget && inferred != null) widget.value = inferred;
 }
 
 function dynamicNumber(input, spec) {
@@ -55,7 +85,7 @@ function reconcileDynamicInputs(node) {
     );
     for (let i = 1; i <= wanted; i++) {
         if (!present.has(i)) {
-            node.addInput(`${spec.prefix}${i}`, "LATENT", { shape: 7 });
+            node.addInput(`${spec.prefix}${i}`, spec.socketType ?? "LATENT", { shape: 7 });
         }
     }
 
@@ -96,6 +126,10 @@ app.registerExtension({
         const originalConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function(info, ...args) {
             const result = originalConfigure?.call(this, info, ...args);
+            // Legacy barrier nodes had no Input Count widget. Infer the saved
+            // preview span before reconciling so old 20-clip Music Video graphs
+            // do not get collapsed to the new six-preview default on load.
+            restoreLegacyInputCount(this, info, SPECS[nodeData?.name]);
             // Reconcile synchronously so saved dynamic links can attach during
             // the graph's normal link-restoration pass.
             ensureUpdateButton(this);

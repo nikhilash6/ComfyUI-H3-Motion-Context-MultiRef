@@ -13944,8 +13944,12 @@
       "properties": {
         "Node name for S&R": "MiniMaxH3LastActiveVHSPreviewBarrier"
       },
-      "widgets_values": [],
-      "widgets_values_named": {}
+      "widgets_values": [
+        20
+      ],
+      "widgets_values_named": {
+        "input_count": 20
+      }
     }
   ],
   "links": [

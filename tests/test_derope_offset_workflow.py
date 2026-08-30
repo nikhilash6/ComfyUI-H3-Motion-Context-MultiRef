@@ -20,8 +20,9 @@ def test_derope_example_uses_one_dynamic_fan_and_offset_motion_context():
     assert guide["widgets_values_named"]["context_length"] == 39
     assert guide["widgets_values_named"]["audio_context_length"] == 0
 
-    context_link = links[guide["inputs"][3]["link"]]
-    start_link = links[guide["inputs"][8]["link"]]
+    by_name = {inp["name"]: inp for inp in guide["inputs"]}
+    context_link = links[by_name["context_frames"]["link"]]
+    start_link = links[by_name["target_start"]["link"]]
     assert context_link[1] == fan["id"] and context_link[2] == 1
     assert start_link[1] == fan["id"] and start_link[2] == 2
 

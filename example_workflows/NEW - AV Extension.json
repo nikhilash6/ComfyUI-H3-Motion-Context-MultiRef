@@ -6048,6 +6048,12 @@
         "aux_id": "seitanism/ComfyUI-H3-Motion-Context-MultiRef",
         "ver": "update8-preview-barrier",
         "Node name for S&R": "MiniMaxH3LastActiveVHSPreviewBarrier"
+      },
+      "widgets_values": [
+        6
+      ],
+      "widgets_values_named": {
+        "input_count": 6
       }
     },
     {

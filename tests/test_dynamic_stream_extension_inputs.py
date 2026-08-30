@@ -28,6 +28,20 @@ def test_stream_node_declares_wide_backend_range_and_modular_input_count():
         assert schema["optional"][f"extension_{i}"][1]["lazy"] is True
 
 
+def test_preview_barrier_declares_wide_backend_range_and_modular_input_count():
+    module = _load_stream_module()
+    cls = module.MiniMaxH3LastActiveVHSPreviewBarrier
+    schema = cls.INPUT_TYPES()
+    assert cls.MAX_PREVIEWS == 64
+    assert schema["required"]["input_count"][1]["default"] == 6
+    assert schema["required"]["input_count"][1]["max"] == 64
+    assert "active_extensions" in schema["optional"]
+    assert "active_clips" in schema["optional"]
+    for i in (1, 6, 7, 20, 64):
+        assert schema["optional"][f"preview_{i}"][0] == "VHS_FILENAMES"
+        assert schema["optional"][f"preview_{i}"][1]["lazy"] is True
+
+
 def test_lazy_status_requests_only_connected_extension_sockets_and_allows_gaps():
     module = _load_stream_module()
     node = module.MiniMaxH3StreamLiveExtensionAVToVHS()
@@ -75,12 +89,17 @@ def test_frontend_has_input_count_refresh_button_and_dynamic_socket_management()
     source = JS.read_text(encoding="utf-8")
     assert 'MiniMaxH3StreamLiveExtensionAVToVHS' in source
     assert 'MiniMaxH3StreamLiveMusicVideoToVHS' in source
+    assert 'MiniMaxH3LastActiveVHSPreviewBarrier' in source
     assert 'prefix: "extension_"' in source
     assert 'prefix: "clip_"' in source
+    assert 'prefix: "preview_"' in source
+    assert 'socketType: "VHS_FILENAMES"' in source
+    assert 'inferLegacyInputCount: true' in source
     assert '"Update inputs"' in source
     assert 'w.name === "input_count"' in source
     assert 'node.removeInput(i)' in source
-    assert 'node.addInput(`${spec.prefix}${i}`, "LATENT"' in source
+    assert 'spec.socketType ?? "LATENT"' in source
+    assert 'restoreLegacyInputCount' in source
     assert 'button.serialize = false' in source
 
 
@@ -131,6 +150,7 @@ def test_preview_barrier_waits_only_for_highest_connected_active_preview():
     # can also be connected/pending, but final assembly only needs to wait for
     # the last active preview.
     needed = barrier.check_lazy_status(
+        input_count=6,
         active_extensions=4,
         preview_1=["done-1"],
         preview_2=None,
@@ -138,6 +158,7 @@ def test_preview_barrier_waits_only_for_highest_connected_active_preview():
     )
     assert needed == ["preview_3"]
     assert barrier.select(
+        input_count=6,
         active_extensions=4,
         preview_1=["done-1"],
         preview_2=None,
@@ -146,8 +167,22 @@ def test_preview_barrier_waits_only_for_highest_connected_active_preview():
 
     # Disabled/bypassed preview groups disappear from kwargs and are therefore
     # ignored. With no enabled preview the barrier is a harmless no-op.
-    assert barrier.check_lazy_status(active_extensions=4) == []
-    assert barrier.select(active_extensions=4) == ([],)
+    assert barrier.check_lazy_status(input_count=6, active_extensions=4) == []
+    assert barrier.select(input_count=6, active_extensions=4) == ([],)
+
+    # The visible Input Count is also a backend cap. A stale/legacy preview
+    # socket above the configured count must not be requested.
+    assert barrier.check_lazy_status(
+        input_count=6,
+        active_extensions=None,
+        preview_7=None,
+    ) == []
+    assert barrier.check_lazy_status(
+        input_count=20,
+        active_clips=20,
+        preview_19=None,
+        preview_20=None,
+    ) == ["preview_20"]
 
 
 def test_final_sink_is_safe_when_upstream_final_stream_is_bypassed_or_disconnected():
@@ -168,6 +203,10 @@ def test_av_example_orders_last_preview_before_final_stream_and_has_bypass_safe_
     final = next(n for n in nodes.values() if n["type"] == "MiniMaxH3StreamLiveExtensionAVToVHS")
     barrier = next(n for n in nodes.values() if n["type"] == "MiniMaxH3LastActiveVHSPreviewBarrier")
     sink = next(n for n in nodes.values() if n["type"] == "MiniMaxH3FinalizeVHSOutput")
+
+    assert barrier["widgets_values"] == [6]
+    assert barrier["widgets_values_named"]["input_count"] == 6
+    assert not any(x["name"] == "preview_7" for x in barrier["inputs"])
 
     gate_input = next(x for x in final["inputs"] if x["name"] == "preview_gate")
     gate_link = links[gate_input["link"]]

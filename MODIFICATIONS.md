@@ -527,6 +527,7 @@ The Music Video final-output path now shares the reusable modular-streaming beha
 - The bundled workflow keeps all 20 clip sampler links available and uses a cache-isolated internal `PrimitiveInt` as the active-clip cap.
 - `H3 Music Video Controller.active_clips` is no longer a backend data dependency of the final streamer or any sampler. The frontend mirrors only the Active Clips widget into that internal parameter; changing Preview mode therefore does not invalidate final assembly, and changing Active Clips cannot change any existing sampler input hash.
 - The shared `H3 Last Active VHS Preview Barrier` now supports both AV Extension and Music Video and waits on the highest enabled clip preview before final assembly requests clip latents.
+- The preview barrier now also exposes **Input Count** plus **Update inputs**. The backend keeps its 64-slot compatibility range, but new/bundled workflows show only the configured preview sockets (6 for AV Extension, 20 for Music Video). Legacy saved barriers infer their previous visible preview span on load.
 - The existing optional final VHS sink remains bypass-safe.
 
 

@@ -69,6 +69,7 @@ def test_v2v_latent_motion_transfer_only_prefixes_stage_defining_nodes():
         21: "PASS 1 - H3 V2V Granular Fractional Denoise",
         34: "PASS 1 - SamplerCustomAdvanced",
         149: "PASS 2 - Load Diffusion Model",
+        156: "Pass 2 — Chunk Feed-Forward",
         131: "PASS 2 - MiniMax H3 Reference to Video",
         133: "PASS 2 - SamplerCustomAdvanced",
     }

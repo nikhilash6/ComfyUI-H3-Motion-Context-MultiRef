@@ -119,6 +119,9 @@ def test_music_workflow_has_explicit_last_active_preview_barrier_and_dynamic_20_
 
     assert final["widgets_values_named"]["input_count"] == 20
     assert final["widgets_values"][0] == 20
+    assert barrier["widgets_values_named"]["input_count"] == 20
+    assert barrier["widgets_values"][0] == 20
+    assert not any(x["name"] == "preview_21" for x in barrier["inputs"])
     gate_link = links[_input(final, "preview_gate")["link"]]
     assert gate_link[1] == barrier["id"]
 
