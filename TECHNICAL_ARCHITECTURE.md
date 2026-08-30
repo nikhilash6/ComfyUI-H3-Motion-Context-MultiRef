@@ -4,17 +4,17 @@ This document explains the implementation behind the workflows in this repositor
 
 If you only want to choose and run a workflow, start with [README.md](README.md) and [example_workflows/README.md](example_workflows/README.md).
 
-> **Update 6 (2026-08-17) current-state note:** the AV Extension and Music Video examples are checkpoint-free direct-latent workflows. Their public final outputs stream frames directly into VideoHelperSuite instead of materializing one complete ComfyUI `IMAGE` movie tensor. Small H3 decoded-audio duration undershoots are time-conformed to the exact frame-derived sample timeline before seam cutting. Sections 14–19 below document the historical Update-5 checkpoint architecture for context; those checkpoint/resume nodes are no longer registered by the current node pack.
+> **Update 6 (2026-08-17) current-state note:** the AV Extension and Music Video examples are checkpoint-free direct-latent workflows. Their public final outputs stream frames directly into VideoHelperSuite instead of materializing one complete ComfyUI `IMAGE` movie tensor. Small H3 decoded-audio duration mismatches in either direction are time-conformed to the exact frame-derived sample timeline before seam cutting. Sections 14–19 below document the historical Update-5 checkpoint architecture for context; those checkpoint/resume nodes are no longer registered by the current node pack.
 
 ### Dated update chronology
 
 - Update 1 — **2026-08-10** — custom keyframes
 - Update 2 — **2026-08-12** — existing-video extension and compatibility improvements
-- Update 3 — **2026-08-14** — per-token video/audio latent masking
+- Update 3 — **2026-08-14** — per-token video/audio latent masking; the corresponding H3 core support was contributed upstream in [ComfyUI PR #15375](https://github.com/Comfy-Org/ComfyUI/pull/15375), “Support per-token video and audio latent noise masks on MiniMax-H3”
 - Update 4 — **2026-08-14** — exact song-latent masking
 - Update 5 — **2026-08-15** — persistent checkpoints and long-form assembly
 - Update 6 — **2026-08-17** — direct-latent long-form workflows, exact AV timing, and VHS streaming
-- Update 7 — **2026-08-18** changelog/PR date; merged to `main` **2026-08-30** — arbitrary inserts, hard-masked keyframes, and H3 AV mask utilities (PR #3 by Reithan)
+- Update 7 — **2026-08-18** changelog/PR date; merged to `main` **2026-08-30** — arbitrary inserts, hard-masked keyframes, and H3 AV mask utilities ([PR #3](https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef/pull/3) by Reithan)
 - Update 8 — **2026-08-30** — granular fractional V2V, exact audio-grid paths, modular streaming/cache fixes, calculated bridge timing, and dynamic de-rope seam continuation
 
 `MODIFICATIONS.md` is the authoritative full change log; this chronology is only a technical orientation index.
@@ -159,6 +159,12 @@ The target AV latent may therefore contain:
 
 The target latent length is authoritative.
 
+### Pre-encode PCM alignment and the generic VAE crop
+
+There is a second, easy-to-miss boundary at the **PCM input to the audio VAE**. Current ComfyUI's generic `VAE.encode()` wrapper center-crops non-aligned input dimensions down to the VAE downscale multiple before the model-specific encoder runs. For the current H3 audio VAE, one latent cell is 800 PCM samples at 32 kHz, i.e. 25 ms / one 40 Hz step. The H3 audio encoder itself can right-pad PCM to that boundary, but the generic wrapper's center-crop happens first. Feeding it an exact picture-duration waveform that is not already on the H3 audio grid can therefore both shorten the encode and shift the waveform origin by a few milliseconds. This upstream behavior was reported in [ComfyUI issue #15970](https://github.com/Comfy-Org/ComfyUI/issues/15970). A narrow core fix was then submitted in [ComfyUI PR #15972](https://github.com/Comfy-Org/ComfyUI/pull/15972): disable the generic input crop for `MiniMaxH3AudioVAE` so the model-specific encoder receives the complete waveform and can perform its own right-padding. That preserves the waveform origin and restores the expected H3 audio-latent length without changing generic VAE behavior for other models.
+
+The repository avoids that wrapper crop rather than compensating afterward: repo-owned PCM -> H3 audio encode paths first construct an **exact `target_audio_steps * samples_per_latent` PCM window with the correct semantic anchor**, then call the VAE. Post-encode latent padding/cropping is not used to repair length mismatches.
+
 This distinction is important for the master-song workflow because an audio VAE given only the exact picture-duration waveform can, on some encode paths, return 206 steps while the H3 target contains 207.
 
 `H3 Song Audio + Masked Video Context` handles this by:
@@ -172,15 +178,15 @@ This distinction is important for the master-song workflow because an audio VAE 
 
 The implementation does not fabricate, repeat, pad, or trim latent audio tokens. A mismatch after exact-grid PCM preparation is treated as a wrapper/encoder contract error.
 
-The Update-7 workaround-retirement audit also removed the earlier retry/over-encode-and-crop paths and stale latent-context overhang bookkeeping. PCM endpoint padding and post-decode timeline conformance remain intentionally separate: they resolve physical media/timeline boundaries, not encoder output length.
+The Update-8 exact-grid/workaround-retirement audit also removed the earlier retry/over-encode-and-crop paths and stale latent-context overhang bookkeeping. PCM endpoint padding and post-decode timeline conformance remain intentionally separate: they resolve physical media/timeline boundaries, not encoder output length.
 
 ### Decoded-audio timebase conformance
 
-The inverse problem also appears after H3 audio-VAE decode. A video-valid clip such as 362 frames does not represent an integer number of 40 Hz audio ticks, so the decoded waveform can be a few hundred samples shorter than the exact picture timeline.
+The inverse problem also appears after H3 audio-VAE decode. A video-valid clip such as 362 frames does not represent an integer number of 40 Hz audio ticks, so the decoded waveform can be slightly **shorter or longer** than the exact picture timeline depending on which side of the rounded 40 Hz boundary the frame count lands.
 
-For small grid-sized mismatches, `existing_video_extension.py` uses `_conform_waveform_length()` to resample the decoded waveform by the tiny rational ratio required to reach the exact frame-derived sample span. This happens **before** the protected-context samples are removed. The seam cut itself then uses absolute frame-to-sample boundaries.
+For small grid-sized mismatches, `existing_video_extension.py` uses `_conform_waveform_length()` to resample the decoded waveform by the tiny rational ratio required to reach the exact frame-derived sample span. The correction works in either direction and happens **before** the protected-context samples are removed. The seam cut itself then uses absolute frame-to-sample boundaries.
 
-The conformance path is deliberately bounded (`max_fractional_change=0.005` by default). A larger mismatch is treated as a real error rather than being silently stretched. The implementation does not append a zero/silence tail for these normal H3 grid undershoots.
+The conformance path is deliberately bounded (`max_fractional_change=0.005` by default). A larger mismatch is treated as a real error rather than being silently stretched. The implementation does not append a zero/silence tail for these normal H3 grid-sized mismatches.
 
 ---
 
@@ -265,6 +271,8 @@ MiniMaxH3ExistingVideoMaskedContext
 
 Purpose: start a latent-masked H3 continuation from a normal decoded video/audio source for which no original H3 sampler latent exists.
 
+The arbitrary-placement extension to this node was contributed by **Reithan in [PR #3](https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef/pull/3), “Implement arbitrary inserts,”** and released as Update 7. Update 8 keeps those insert semantics while routing the source-audio encode through the repository's strict exact-grid PCM path.
+
 The node:
 
 1. normalizes source timing to the H3 24 fps timeline;
@@ -294,6 +302,8 @@ insert_frame 102:  interior, exact AV boundary
 ```
 
 The node returns four outputs: `latent`, `trim_frames`, `insert_frame`, `preserved_frames`. Wire `insert_frame` and `preserved_frames` to `H3 Assemble Interior Insert`.
+
+The preserved **duration** remains exact-grid even for an interior placement. With the default 39-frame context, the source span is always 65 H3 audio steps = 52,000 PCM samples at 32 kHz before encode. At `insert_frame=17`, only the destination audio-step start is quantized onto H3's 40 Hz grid; the source span itself is not shortened or center-cropped. The final assembler then restores source audio on exact frame-derived PCM boundaries, so this latent-placement quantization cannot accumulate into final-output drift.
 
 ### Interior inserts: `H3 Assemble Interior Insert`
 
@@ -499,6 +509,8 @@ first continuation pass -> x0 decode -> Jerk Oracle / Time Smear
 A classic guide-based continuation repeats the guided visual prefix at the beginning of the generated output.
 
 `H3 Motion Context Trim` removes that repeated region for delivery and can keep a smaller visual overlap specifically for a final blend.
+
+When decoded audio is connected, the trim path also enforces the exact picture timebase. H3's rounded 40 Hz audio grid can decode a valid clip a few milliseconds short or long (for example, 362 frames at 24 fps corresponds to 603 H3 audio cells = 15.075 s, versus 15.0833... s of picture). Before removing the duplicated protected prefix, the node performs the same small bounded timebase conformance used by current AV assembly, then cuts audio on the exact frame-derived sample boundary. This prevents per-clip undershoot/overshoot from accumulating across legacy `AudioConcat` chains. It is a **post-decode timeline correction**, separate from the pre-encode exact-grid PCM preparation described above.
 
 The legacy workflows historically used KJNodes `ImageBatchExtendWithOverlap` to accumulate and blend clips.
 
@@ -763,6 +775,8 @@ This avoids false negatives such as the environment reported in repository Issue
 
 ### AV-mask compatibility
 
+The repository's H3 masking work was also contributed upstream to ComfyUI in **[PR #15375](https://github.com/Comfy-Org/ComfyUI/pull/15375), “Support per-token video and audio latent noise masks on MiniMax-H3”** (authored as `drozbay`). That upstream PR is the core contribution behind native per-token H3 video/audio denoise-mask handling: it carries the mask payload into the model, derives mask-dependent row timesteps, and applies MiniMax-H3-specific latent inpainting behavior. The compatibility modules in this repository are therefore capability fallbacks for older/intermediate ComfyUI revisions, not a competing permanent mask implementation.
+
 `h3_mask_compat.py` and `h3_mask_payload_compat.py` cover the target-latent video/audio denoise-mask path.
 
 The mask layer is kept separate from normal Motion Context so using a legacy guide workflow does not unnecessarily install masked-target compatibility behavior.
@@ -771,7 +785,7 @@ Detection is capability-oriented so newer native ComfyUI support can make the fa
 
 PR #15375 changed its internal integration on 2026-08-15 (commit `989e7a9`): the earlier `MiniMaxH3.process_denoise_mask` preprocessing hook was removed, and token-grid mask/blend alignment moved into `MiniMaxH3.scale_latent_inpaint(..., x=..., denoise_mask=...)`. The compatibility layer recognizes both layouts. On a ComfyUI build with the newer native architecture it does **not** reinstall the older preprocessing hook; native mask alignment and payload handling remain authoritative.
 
-The workflow-facing mask contract is unchanged: `0 = preserve`, `1 = generate`, with fractional audio values allowed for the AV feather. The current PR quantizes fractional mask strengths to a bounded set of levels before deriving per-row timesteps, so the Update-6 half-cosine audio feather remains compatible with the newer native implementation.
+The workflow-facing mask contract is unchanged: `0 = preserve`, `1 = generate`, with fractional audio values allowed for the AV feather. ComfyUI PR #15375 quantizes fractional mask strengths to a bounded set of levels before deriving per-row timesteps, so the Update-6 half-cosine audio feather remains compatible with the newer native implementation.
 
 ### Update 8 step 1: fractional V2V precision — 2026-08-30
 
@@ -785,7 +799,7 @@ The older Update-2/6 AV-mask compatibility remains separate and lazy. Its payloa
 
 ### Shared exact H3 audio-grid preparation
 
-`h3_audio_grid.py` centralizes the repo's source-PCM -> H3-audio-latent contract. It discovers the live audio VAE sample rate and samples-per-latent geometry, requires a PCM length of exactly `target_audio_steps * samples_per_latent`, and verifies that the encode returns exactly `target_audio_steps`. This is not a monkeypatch: it makes the node input conform to the H3 grid before ComfyUI's generic VAE preprocessing can alter it.
+`h3_audio_grid.py` centralizes the repo's source-PCM -> H3-audio-latent contract. It discovers the live audio VAE sample rate and samples-per-latent geometry, requires a PCM length of exactly `target_audio_steps * samples_per_latent`, and verifies that the encode returns exactly `target_audio_steps`. This is not a monkeypatch: it makes the node input conform to the H3 grid before ComfyUI's generic VAE preprocessing can alter it. On the current 32 kHz H3 audio VAE, that geometry is 800 PCM samples per latent cell (25 ms / 40 Hz), so exact-grid preparation also prevents the generic wrapper's centered down-crop from shifting the semantic start or seam.
 
 Affected encoders use different alignment anchors according to their semantics:
 
@@ -793,7 +807,17 @@ Affected encoders use different alignment anchors according to their semantics:
 - Motion Context tail audio: continuation seam/end is authoritative;
 - Masked AV Bridge: each generated-middle seam is authoritative on its adjacent source side.
 
-`H3 Existing Video Masked Context` restricts the **preserved duration** to shared AV boundaries, so the source-audio span itself is naturally exact-grid and still routes through the shared strict encoder. Update 7 interior inserts may place that exact-grid span at a non-joint boundary such as frame 17; only the destination audio-step start is then rounded to H3's 40 Hz grid (with the existing warning). Multiples of 51 align both clocks exactly. `H3 Assemble Interior Insert` restores the source segment at exact frame-derived PCM boundaries after decode, so latent-grid placement quantization does not become final-output seam drift. Latent-copy and decode-only paths never enter the generic audio VAE encoder and are unaffected.
+`H3 Existing Video Masked Context` restricts the **preserved duration** to shared AV boundaries, so the source-audio span itself is naturally exact-grid and still routes through the shared strict encoder. Update 7 interior inserts from Reithan's PR #3 may place that exact-grid span at a non-joint boundary such as frame 17; only the destination audio-step start is then rounded to H3's 40 Hz grid (with the existing warning). Multiples of 51 align both clocks exactly. `H3 Assemble Interior Insert` restores the source segment at exact frame-derived PCM boundaries after decode, so latent-grid placement quantization does not become final-output seam drift. Latent-copy and decode-only paths never enter the generic audio VAE encoder and are unaffected.
+
+Keep the three audio contracts distinct when debugging:
+
+1. **Before audio-VAE encode:** build an exact H3-grid PCM window with the correct start/end/seam anchor; an encode that returns the wrong latent-step count is an error.
+2. **After audio-VAE decode:** tiny frame-vs-40-Hz duration differences may be time-conformed to the exact picture timeline before trimming/splicing.
+3. **Final delivery/mux assembly:** public waveforms may still be trimmed or endpoint-padded to an explicit frame-derived delivery length.
+
+These post-decode/output operations do not compensate for a bad PCM -> latent encode.
+
+One deliberate boundary remains outside this repository's exact-grid encoder: optional `ref_audio_*` inputs on stock `MiniMaxH3ReferenceToVideo` are encoded by ComfyUI core. They therefore inherit the AudioVAE preprocessing behavior of the installed ComfyUI revision. On builds without the [PR #15972](https://github.com/Comfy-Org/ComfyUI/pull/15972) fix, those stock reference-audio sockets can still be affected by the generic center-crop described above; once that core fix is present, `MiniMaxH3AudioVAE` receives the complete waveform and performs its own right-padding. The repository's master-song path and repo-owned source/timeline-audio encode paths do not use those sockets for their authoritative audio timeline.
 
 ---
 
