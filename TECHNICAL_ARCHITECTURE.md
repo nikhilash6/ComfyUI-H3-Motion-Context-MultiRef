@@ -15,7 +15,7 @@ If you only want to choose and run a workflow, start with [README.md](README.md)
 - Update 5 — **2026-08-15** — persistent checkpoints and long-form assembly
 - Update 6 — **2026-08-17** — direct-latent long-form workflows, exact AV timing, and VHS streaming
 - Update 7 — **2026-08-18** changelog/PR date; merged to `main` **2026-08-30** — arbitrary inserts, hard-masked keyframes, and H3 AV mask utilities (PR #3 by Reithan)
-- Update 8 — **started 2026-08-30** (work in progress) — granular fractional V2V, exact audio-grid paths, modular streaming/cache fixes, calculated bridge timing, and dynamic de-rope seam continuation
+- Update 8 — **2026-08-30** — granular fractional V2V, exact audio-grid paths, modular streaming/cache fixes, calculated bridge timing, and dynamic de-rope seam continuation
 
 `MODIFICATIONS.md` is the authoritative full change log; this chronology is only a technical orientation index.
 
@@ -473,7 +473,7 @@ When `context_audio` is supplied instead of a previous H3 AV latent, Motion Cont
 
 ### Interior Motion Context placement for de-rope seams
 
-Update 8 (started 2026-08-30) appends `target_start` to `H3 Motion Context`. The value is a pixel-frame position on the current target timeline. At `0`, behavior is unchanged: the guide occupies the head and its covered span is returned as `trim_frames`. At a positive offset, the native guide is placed inside the target and `trim_frames=0`, because the guide is conditioning rather than a duplicated delivery prefix.
+Update 8 (2026-08-30) appends `target_start` to `H3 Motion Context`. The value is a pixel-frame position on the current target timeline. At `0`, behavior is unchanged: the guide occupies the head and its covered span is returned as `trim_frames`. At a positive offset, the native guide is placed inside the target and `trim_frames=0`, because the guide is conditioning rather than a duplicated delivery prefix.
 
 This is intentionally different from Update 7 (2026-08-18), which introduced `insert_frame` on `H3 Existing Video Masked Context`. `target_start` changes native conditioning coordinates only; it does not write source pixels/audio into the target latent and does not require `H3 Assemble Interior Insert`. If timeline-mode Motion Context audio is supplied, its guide coordinate is shifted with the visual guide while the encoded audio itself still follows Update 8's exact 40 Hz grid contract.
 

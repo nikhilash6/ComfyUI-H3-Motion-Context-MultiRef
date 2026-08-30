@@ -332,7 +332,7 @@ Merge-preparation servicing retained Reithan's feature attribution while adding 
 
 ---
 
-## Update 8 — work in progress — Step 1: Fractional V2V denoise — 2026-08-30
+## Update 8 — released 2026-08-30 — Fractional V2V, streaming, exact-grid and de-rope improvements
 
 Step 1 adds `H3V2VGranularFractionalDenoise` (`H3 V2V Granular Fractional Denoise`), moving fractional V2V strength onto H3's per-stream denoise-mask path. "Granular" denotes the continuous `0..1` preserve-to-generate mask levels used instead of binary masking; "Fractional Denoise" describes their V2V effect. Near-1 mask precision compatibility is lazy and capability-probed: importing the repository does not patch ComfyUI, and executing the node patches only precision behaviors the live H3 core still lacks.
 
@@ -467,7 +467,7 @@ Integrated the audited two-pass de-rope continuation path into Update 8. De-rope
 ### Step 1t: dated update references
 
 - Dated the prominent Update 7 and Update 8 references in the main README, workflow guide, and technical architecture so users can tell when each numbered update landed.
-- Update 8 is recorded as starting on **2026-08-30** while it remains work in progress.
+- Update 8 is recorded as released on **2026-08-30**.
 - Kept this file as the authoritative complete dated history.
 
 ### Step 1u: README recent-changes summary and technical chronology

@@ -5,7 +5,7 @@ A ComfyUI custom-node pack and workflow collection for extending MiniMax H3 vide
 
 Update 7 (**dated 2026-08-18; merged to main 2026-08-30**) adds arbitrary-position existing-video inserts, hard-preserved masked keyframes, and H3-aware AV noise-mask utilities. Update 7 was contributed by **Reithan** through [PR #3](https://github.com/seitanism/ComfyUI-H3-Motion-Context-MultiRef/pull/3).
 
-Update 8 (**started 2026-08-30**) is in progress. Its main user-facing additions and bug fixes are summarized below.
+Update 8 (**released 2026-08-30**) adds the user-facing features and bug fixes summarized below.
 
 See [MODIFICATIONS.md](MODIFICATIONS.md) for the complete dated update history.
 
@@ -82,9 +82,9 @@ For H3 AV latents, use the H3 Set/Clear AV Noise Mask nodes when separate video/
 
 The merge-preparation servicing of PR #3 added mask-composability checks, overlap diagnostics, documentation cleanup, and regression-test repairs; the Update 7 feature set itself is credited to Reithan's PR.
 
-## Update 8 — current work in progress — started 2026-08-30
+## Update 8 — released 2026-08-30
 
-Update 8 focuses on making long-form H3 generation more reusable, predictable, and flexible while adding fractional V2V and de-rope-aware continuation. Important changes so far:
+Update 8 focuses on making long-form H3 generation more reusable, predictable, and flexible while adding fractional V2V and de-rope-aware continuation. Important changes:
 
 - **Changing the controller clip/extension count no longer forces earlier generated clips to regenerate.** `Active Clips` / `Active Extensions` are mirrored into cache-isolated internal execution parameters instead of becoming sampler inputs. Previously generated sampler branches therefore keep the same input hashes and remain cache-reusable; increasing the count activates the newly requested continuation work instead of invalidating the earlier clips.
 - **Final AV/Music assembly no longer requires every predefined group/socket to be connected.** `H3 Stream AV Extensions to VHS` and `H3 Stream Final Music Video to VHS` expose **Input Count** plus **Update inputs**. AV Extension skips disconnected `extension_N` sockets, so a custom workflow can assemble only the extension groups that are actually connected. Music Video accepts unused trailing sockets while still rejecting middle holes, because compacting a middle clip would move visuals against the unchanged master-song timeline.

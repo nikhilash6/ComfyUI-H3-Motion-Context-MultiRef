@@ -29,7 +29,7 @@ def test_readme_stays_recent_changes_only_and_technical_report_has_dated_chronol
     assert "complete dated update history" in readme
     assert "### Dated update chronology" in architecture
     for number, date in expected.items():
-        assert f"Update {number} — **{date}" in architecture or (number == 8 and "Update 8 — **started 2026-08-30**" in architecture)
+        assert f"Update {number} — **{date}" in architecture
 
 
 def test_readme_update8_highlights_user_visible_fixes_and_features():
@@ -121,11 +121,17 @@ def test_update_7_credits_pr3_and_reithan():
 def test_update_8_is_distinct_from_pr3_update_7():
     modifications = (ROOT / "MODIFICATIONS.md").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    architecture = (ROOT / "TECHNICAL_ARCHITECTURE.md").read_text(encoding="utf-8")
 
     assert "## Update 7 — Arbitrary-position latent inserts and keyframes" in modifications
-    assert "## Update 8 — work in progress" in modifications
-    assert "Update 8 (**started 2026-08-30**) is in progress" in readme
+    assert "## Update 8 — released 2026-08-30" in modifications
+    assert "Update 8 (**released 2026-08-30**)" in readme
     assert "fractional H3 V2V denoise" in readme
+    assert "current work in progress" not in readme
+    assert "started 2026-08-30" not in readme
+    assert "is in progress" not in readme
+    assert "work in progress" not in modifications
+    assert "(work in progress)" not in architecture
 
 
 def test_update_8_contains_dynamic_derope_seam_without_renumbering_update_7():
