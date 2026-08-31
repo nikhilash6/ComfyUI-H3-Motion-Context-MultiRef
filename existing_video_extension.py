@@ -584,7 +584,7 @@ def _prompt_node(prompt, node_id):
 
 
 def _vhs_source_from_prompt(prompt, unique_id, video_info=None):
-    """Resolve the upstream VHS upload loader without touching its AUDIO output."""
+    """Resolve a supported upstream VHS video loader without touching its AUDIO output."""
     current = _prompt_node(prompt, unique_id)
     if not isinstance(current, dict):
         raise RuntimeError(
@@ -598,9 +598,13 @@ def _vhs_source_from_prompt(prompt, unique_id, video_info=None):
         )
     source = _prompt_node(prompt, link[0])
     source_type = str(source.get("class_type")) if isinstance(source, dict) else ""
-    if source_type not in ("VHS_LoadVideo", "VHS_LoadVideoFFmpeg"):
+    legacy_loaders = {"VHS_LoadVideo", "VHS_LoadVideoPath"}
+    ffmpeg_loaders = {"VHS_LoadVideoFFmpeg", "VHS_LoadVideoFFmpegPath"}
+    supported_loaders = legacy_loaders | ffmpeg_loaders
+    if source_type not in supported_loaders:
         raise RuntimeError(
-            "h3_source_audio: video_info must come directly from VHS_LoadVideo or VHS_LoadVideoFFmpeg"
+            "h3_source_audio: video_info must come directly from a supported VHS video loader "
+            "(VHS_LoadVideo, VHS_LoadVideoPath, VHS_LoadVideoFFmpeg, or VHS_LoadVideoFFmpegPath)"
         )
     source_inputs = source.get("inputs", {})
     video_name = source_inputs.get("video")
@@ -617,8 +621,8 @@ def _vhs_source_from_prompt(prompt, unique_id, video_info=None):
     else:
         loaded_fps = 0.0
 
-    if source_type == "VHS_LoadVideoFFmpeg":
-        # The FFmpeg loader seeks by an explicit timestamp, so use that exact
+    if source_type in ffmpeg_loaders:
+        # FFmpeg loaders seek by an explicit timestamp, so use that exact
         # value for the independently extracted source soundtrack as well.
         start_seconds = max(0.0, float(source_inputs.get("start_time", 0) or 0))
         select_n = 1
@@ -637,24 +641,33 @@ def _vhs_source_from_prompt(prompt, unique_id, video_info=None):
         "loaded_fps": loaded_fps,
         "force_rate": force_rate,
         "loader_type": source_type,
+        "direct_path": source_type in {"VHS_LoadVideoPath", "VHS_LoadVideoFFmpegPath"},
     }
 
 
-def _safe_source_audio(video_name, target_sr, frame_count, start_seconds=0.0):
+def _safe_source_audio(
+    video_name, target_sr, frame_count, start_seconds=0.0, direct_path=False
+):
     """Extract source audio eagerly; a genuinely missing stream becomes silence."""
     if not video_name:
         raise ValueError("h3_source_audio: no source video filename was provided")
 
-    try:
-        import folder_paths
-        path = folder_paths.get_annotated_filepath(
-            video_name, folder_paths.get_input_directory()
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            "h3_source_audio: failed to resolve source video %r: %s"
-            % (video_name, exc)
-        ) from exc
+    if direct_path:
+        # VHS path loaders already receive an arbitrary filesystem path or URL.
+        # Feed the same source directly to ffmpeg instead of resolving it through
+        # ComfyUI's input directory like the upload loaders.
+        path = str(video_name)
+    else:
+        try:
+            import folder_paths
+            path = folder_paths.get_annotated_filepath(
+                video_name, folder_paths.get_input_directory()
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "h3_source_audio: failed to resolve source video %r: %s"
+                % (video_name, exc)
+            ) from exc
 
     duration = int(frame_count) / float(FPS)
     args = [_ffmpeg_executable(), "-v", "error", "-i", path]
@@ -784,7 +797,8 @@ class MiniMaxH3SourceAudioPolicy:
                     % (loaded_fps, float(source_fps))
                 )
             return (_safe_source_audio(
-                source["video"], output_sr, source_count, source["start_seconds"]
+                source["video"], output_sr, source_count, source["start_seconds"],
+                direct_path=bool(source.get("direct_path", False)),
             ),)
 
         if regenerated_latent is None:

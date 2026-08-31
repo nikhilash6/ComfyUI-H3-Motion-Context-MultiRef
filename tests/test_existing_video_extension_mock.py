@@ -437,6 +437,93 @@ def test_source_audio_policy_honors_vhs_ffmpeg_start_time_as_audio_seek():
     assert abs(source["start_seconds"] - 12.345) < 1e-9
 
 
+def test_source_audio_policy_honors_vhs_path_skip_as_audio_seek():
+    prompt = {
+        "p": {"class_type": "MiniMaxH3SourceAudioPolicy", "inputs": {"video_info": ["v", 3]}},
+        "v": {"class_type": "VHS_LoadVideoPath", "inputs": {
+            "video": "/media/source/clip.mp4", "force_rate": 24,
+            "skip_first_frames": 48, "select_every_nth": 1,
+        }},
+    }
+    info = {"source_fps": 30.0, "loaded_fps": 24.0}
+    source = module._vhs_source_from_prompt(prompt, "p", info)
+    assert source["video"] == "/media/source/clip.mp4"
+    assert source["loader_type"] == "VHS_LoadVideoPath"
+    assert source["direct_path"] is True
+    assert abs(source["start_seconds"] - 2.0) < 1e-9
+
+
+def test_source_audio_policy_honors_vhs_ffmpeg_path_start_time_and_direct_path():
+    prompt = {
+        "p": {"class_type": "MiniMaxH3SourceAudioPolicy", "inputs": {"video_info": ["v", 3]}},
+        "v": {"class_type": "VHS_LoadVideoFFmpegPath", "inputs": {
+            "video": "/media/source/clip.mp4", "force_rate": 24, "start_time": 7.125,
+        }},
+    }
+    info = {"source_fps": 30.0, "loaded_fps": 24.0}
+    source = module._vhs_source_from_prompt(prompt, "p", info)
+    assert source["video"] == "/media/source/clip.mp4"
+    assert source["loader_type"] == "VHS_LoadVideoFFmpegPath"
+    assert source["select_every_nth"] == 1
+    assert source["direct_path"] is True
+    assert abs(source["start_seconds"] - 7.125) < 1e-9
+
+
+def test_source_audio_policy_path_loader_bypasses_comfy_input_resolution():
+    node = module.MiniMaxH3SourceAudioPolicy()
+    frames = torch.rand((120, 32, 64, 3))
+    video_info = {"source_fps": 24.0, "loaded_fps": 24.0}
+    direct_video = "/srv/videos/source clip.mkv"
+    prompt = {
+        "p": {"class_type": "MiniMaxH3SourceAudioPolicy", "inputs": {"video_info": ["v", 3]}},
+        "v": {"class_type": "VHS_LoadVideoFFmpegPath", "inputs": {
+            "video": direct_video, "force_rate": 24, "start_time": 3.5,
+        }},
+    }
+
+    old_modules = {name: sys.modules.get(name) for name in (
+        "folder_paths", "imageio_ffmpeg"
+    )}
+    old_run = module.subprocess.run
+    seen = {}
+    try:
+        folder_paths = types.ModuleType("folder_paths")
+        def forbidden(*args, **kwargs):
+            raise AssertionError("path loaders must not resolve through ComfyUI input")
+        folder_paths.get_input_directory = forbidden
+        folder_paths.get_annotated_filepath = forbidden
+        sys.modules["folder_paths"] = folder_paths
+
+        imageio_ffmpeg = types.ModuleType("imageio_ffmpeg")
+        imageio_ffmpeg.get_ffmpeg_exe = lambda: "/bin/ffmpeg"
+        sys.modules["imageio_ffmpeg"] = imageio_ffmpeg
+
+        class Proc:
+            returncode = 1
+            stdout = b""
+            stderr = b"Stream map '0:a:0' matches no streams"
+
+        def fake_run(args, **kwargs):
+            seen["args"] = list(args)
+            return Proc()
+        module.subprocess.run = fake_run
+
+        out, = node.select(
+            AudioVAE(), "keep_source", frames, video_info, 24.0,
+            prompt=prompt, unique_id="p",
+        )
+        assert out["waveform"].shape == (1, 2, 160000)
+        assert direct_video in seen["args"]
+        assert seen["args"][seen["args"].index("-ss") + 1] == "3.5"
+    finally:
+        module.subprocess.run = old_run
+        for name, value in old_modules.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
+
+
 def test_fan_recovered_context_repairs_smear_and_returns_dynamic_native_guide():
     target = torch.zeros((12, 2, 3, 3), dtype=torch.float32)
     source = torch.stack([
